@@ -1,0 +1,7 @@
+{
+  "name": "Niko Access Control",
+  "content_in_root": false,
+  "render_readme": true,
+  "homeassistant": "2024.1.0",
+  "filename": "niko_access_control.zip"
+}

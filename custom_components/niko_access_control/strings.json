@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to HikConnect",
+        "description": "Enter your HikConnect (Niko Smart Home) account credentials and the serial number of your access control doorbell.",
+        "data": {
+          "username": "Username (email or phone)",
+          "password": "Password",
+          "device_serial": "Device Serial Number"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to HikConnect. Check your internet connection.",
+      "invalid_auth": "Invalid credentials. Check your username and password.",
+      "unknown": "Unexpected error. Check the logs."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  }
+}
