@@ -18,7 +18,8 @@ from .coordinator import NikoCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-HISTORY_SLOTS = 20  # one image entity per slot
+# Number of per-call history image entities (slot 0 = most recent)
+HISTORY_SLOTS = 20
 
 
 async def async_setup_entry(
@@ -28,13 +29,9 @@ async def async_setup_entry(
 ) -> None:
     coordinator: NikoCoordinator = hass.data[DOMAIN][entry.entry_id]
     serial = entry.data[CONF_DEVICE_SERIAL]
-
-    # slot 0 keeps unique_id "last_call_snapshot" for backward compatibility
-    entities = [NikoCallImage(coordinator, serial, 0)]
-    for slot in range(1, HISTORY_SLOTS):
-        entities.append(NikoCallImage(coordinator, serial, slot))
-
-    async_add_entities(entities)
+    async_add_entities(
+        [NikoCallImage(coordinator, serial, slot) for slot in range(HISTORY_SLOTS)]
+    )
 
 
 def _localise(naive: datetime | None) -> datetime | None:
@@ -56,7 +53,7 @@ def _device_info(serial: str) -> DeviceInfo:
 
 
 class NikoCallImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
-    """Image entity for a single position in the call history ring buffer."""
+    """Image entity for a single position in the call history (slot 0 = most recent)."""
 
     _attr_content_type = "image/jpeg"
 
@@ -65,26 +62,32 @@ class NikoCallImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
         ImageEntity.__init__(self, coordinator.hass)
         self._serial = serial
         self._slot = slot
-        # slot 0 reuses the existing "last_call_snapshot" registry entry
-        self._attr_unique_id = (
-            f"{serial}_last_call_snapshot" if slot == 0
-            else f"{serial}_call_history_{slot}"
-        )
+
+        # Slot 0 uses unpadded id to resurrect existing registry entry; 1-19 are zero-padded
+        if slot == 0:
+            self._attr_unique_id = f"{serial}_call_history_0"
+        else:
+            self._attr_unique_id = f"{serial}_call_history_{slot:02d}"
+
         self._attr_device_info = _device_info(serial)
         self._pic_url: str | None = None
         self._cached: bytes | None = None
 
-    # ── dynamic name ──────────────────────────────────────────────────────────
+    # ── dynamic name: emoji + date so the name itself is informative without
+    #    duplicating the status text that HA shows via the card state label ──
 
     @property
     def name(self) -> str:
         call = self._call()
         if not call:
             return "Last Call Snapshot" if self._slot == 0 else f"Call {self._slot + 1}"
-        dt = _localise(call.calling_datetime)
-        date_str = dt.strftime("%-d %b  %H:%M") if dt else call.calling_time[-8:-3]
         icon = "✅" if call.is_answered else "❌"
-        return f"{icon}  {date_str}"
+        dt = call.calling_datetime
+        if dt:
+            date_str = f"{dt.day} {dt.strftime('%b')} {dt.strftime('%H:%M')}"
+        else:
+            date_str = (call.calling_time or "")[:16]
+        return f"{icon} {date_str}"
 
     @property
     def icon(self) -> str:
@@ -103,8 +106,8 @@ class NikoCallImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
 
     @property
     def image_last_updated(self) -> datetime | None:
-        call = self._call()
-        return _localise(call.calling_datetime) if call else None
+        """Timestamp shown by HA as the entity state ("X ago")."""
+        return _localise(self._call().calling_datetime) if self._call() else None
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -115,7 +118,6 @@ class NikoCallImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
             "calling_time": call.calling_time,
             "status": call.status_label,
             "calling_id": call.calling_id,
-            "message": call.calling_message,
         }
 
     # ── image fetch ───────────────────────────────────────────────────────────
