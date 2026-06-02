@@ -114,9 +114,10 @@ class NikoLastCallStatusSensor(_NikoBase):
 
 
 class NikoCallCountSensor(_NikoBase):
-    _attr_name = "Total Calls (last 20)"
+    _attr_name = "Total Calls"
     _attr_icon = "mdi:counter"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
         super().__init__(coordinator, serial)

@@ -188,47 +188,40 @@ class HikConnectAPI:
     async def get_calls(
         self, device_serial: str, count: int = 10
     ) -> list[CallingInfo]:
-        """Fetch call history. Queries both read (1) and unread (0) then merges."""
+        """Fetch call history sorted by date, newest first."""
         path = CALLING_LIST_PATH.format(device_serial=device_serial)
-        seen: set[str] = set()
-        result: list[CallingInfo] = []
+        try:
+            resp = await self._get(path, params={"pageSize": count})
+        except HikConnectAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("get_calls failed: %s", err)
+            return []
 
-        for msg_status in (0, 1):
-            params = {"msgStatus": msg_status, "pageSize": count}
-            try:
-                resp = await self._get(path, params=params)
-            except HikConnectAuthError:
-                raise  # Let coordinator handle session refresh
-            except Exception as err:
-                _LOGGER.debug("get_calls msgStatus=%s failed: %s", msg_status, err)
-                continue
+        meta_code = str(resp.get("meta", {}).get("code", resp.get("code", "")))
+        if meta_code != "200":
+            return []
 
-            meta_code = str(resp.get("meta", {}).get("code", resp.get("code", "")))
-            if meta_code != "200":
-                continue
+        items = resp.get("data", [])
+        if not isinstance(items, list):
+            return []
 
-            items = resp.get("data", [])
-            if not isinstance(items, list):
-                continue
-
-            for r in items:
-                cid = r.get("callingId", "")
-                if cid and cid not in seen:
-                    seen.add(cid)
-                    result.append(CallingInfo(
-                        calling_id=cid,
-                        calling_time=r.get("callingTime", ""),
-                        calling_status=r.get("callingStatus", 0),
-                        device_serial=r.get("deviceSerial", device_serial),
-                        channel_no=r.get("channelNo", 0),
-                        msg_status=r.get("msgStatus", 0),
-                        pic_url=r.get("picUrl") or None,
-                        calling_message=r.get("callingMessage", ""),
-                    ))
-
-        # Sort newest first and cap at requested count
+        result = [
+            CallingInfo(
+                calling_id=r.get("callingId", ""),
+                calling_time=r.get("callingTime", ""),
+                calling_status=r.get("callingStatus", 0),
+                device_serial=r.get("deviceSerial", device_serial),
+                channel_no=r.get("channelNo", 0),
+                msg_status=r.get("msgStatus", 0),
+                pic_url=r.get("picUrl") or None,
+                calling_message=r.get("callingMessage", ""),
+            )
+            for r in items
+            if r.get("callingId")
+        ]
         result.sort(key=lambda c: c.calling_time, reverse=True)
-        return result[:count]
+        return result
 
     async def get_last_call(self, device_serial: str) -> CallingInfo | None:
         calls = await self.get_calls(device_serial, count=1)
