@@ -78,13 +78,7 @@ class NikoCallImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
         call = self._call()
         if not call:
             return "Last Call Snapshot" if self._slot == 0 else f"Call {self._slot + 1}"
-        icon = "✅" if call.is_answered else "❌"
-        dt = call.calling_datetime
-        if dt:
-            date_str = f"{dt.day} {dt.strftime('%b')} {dt.strftime('%H:%M')}"
-        else:
-            date_str = (call.calling_time or "")[:16]
-        return f"{icon} {date_str}"
+        return "Answered" if call.is_answered else "Missed"
 
     @property
     def icon(self) -> str:
