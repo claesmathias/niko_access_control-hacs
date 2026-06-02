@@ -74,13 +74,18 @@ class DeviceInfo:
     """Device hardware/firmware information from ISAPI."""
 
     firmware_version: str = ""
+    firmware_released_date: str = ""
     hardware_version: str = ""
     model: str = ""
     serial_number: str = ""
     mac_address: str = ""
     ip_address: str = ""
     device_name: str = ""
-    device_type: str = ""
+
+    @property
+    def hardware_version_display(self) -> str:
+        """Return hardware version, falling back to firmware build date."""
+        return self.hardware_version or self.firmware_released_date or ""
 
 
 class HikConnectAPI:
@@ -268,13 +273,13 @@ class HikConnectAPI:
         try:
             return DeviceInfo(
                 firmware_version=data.get("firmwareVersion", ""),
+                firmware_released_date=data.get("firmwareReleasedDate", ""),
                 hardware_version=data.get("hardwareVersion", ""),
                 model=data.get("model", ""),
                 serial_number=data.get("serialNumber", ""),
                 mac_address=data.get("macAddress", ""),
                 ip_address=data.get("ipAddress", ""),
                 device_name=data.get("deviceName", ""),
-                device_type=data.get("deviceType", ""),
             )
         except Exception as err:
             _LOGGER.debug("Failed to parse DeviceInfo: %s", err)

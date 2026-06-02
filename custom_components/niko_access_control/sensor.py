@@ -44,14 +44,15 @@ async def async_setup_entry(
         NikoLastCallTimeSensor(coordinator, serial),
         NikoLastCallStatusSensor(coordinator, serial),
         NikoCallCountSensor(coordinator, serial),
-        # Device info (diagnostic) — shown even if empty until first ISAPI response
-        NikoDeviceInfoSensor(coordinator, serial, "firmware_version",  "Firmware Version",  "mdi:chip"),
-        NikoDeviceInfoSensor(coordinator, serial, "hardware_version",  "Hardware Version",  "mdi:memory"),
-        NikoDeviceInfoSensor(coordinator, serial, "model",             "Model",             "mdi:identifier"),
-        NikoDeviceInfoSensor(coordinator, serial, "serial_number",     "Serial Number",     "mdi:barcode"),
-        NikoDeviceInfoSensor(coordinator, serial, "mac_address",       "MAC Address",       "mdi:lan"),
-        NikoDeviceInfoSensor(coordinator, serial, "ip_address",        "IP Address",        "mdi:ip-network"),
-        NikoDeviceInfoSensor(coordinator, serial, "device_name",       "Device Name",       "mdi:doorbell"),
+        # Device info (diagnostic)
+        NikoDeviceInfoSensor(coordinator, serial, "firmware_version",        "Firmware Version",  "mdi:chip"),
+        NikoDeviceInfoSensor(coordinator, serial, "firmware_released_date",  "Firmware Build",    "mdi:calendar"),
+        NikoDeviceInfoSensor(coordinator, serial, "hardware_version_display","Hardware Version",  "mdi:memory"),
+        NikoDeviceInfoSensor(coordinator, serial, "model",                   "Model",             "mdi:identifier"),
+        NikoDeviceInfoSensor(coordinator, serial, "serial_number",           "Serial Number",     "mdi:barcode"),
+        NikoDeviceInfoSensor(coordinator, serial, "mac_address",             "MAC Address",       "mdi:lan"),
+        NikoDeviceInfoSensor(coordinator, serial, "ip_address",              "IP Address",        "mdi:ip-network"),
+        NikoDeviceInfoSensor(coordinator, serial, "device_name",             "Device Name",       "mdi:doorbell"),
     ])
 
 
