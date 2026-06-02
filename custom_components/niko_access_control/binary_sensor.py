@@ -28,6 +28,7 @@ async def async_setup_entry(
 class NikoOnlineSensor(CoordinatorEntity[NikoCoordinator], BinarySensorEntity):
     """Reports whether the doorbell is reachable via HikConnect."""
 
+    _attr_has_entity_name = True
     _attr_name = "Online"
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC

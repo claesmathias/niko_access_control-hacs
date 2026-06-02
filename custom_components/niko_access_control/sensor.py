@@ -69,6 +69,8 @@ def _device_info(serial: str) -> DeviceInfo:
 
 
 class _NikoBase(CoordinatorEntity[NikoCoordinator], SensorEntity):
+    _attr_has_entity_name = True
+
     def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
         super().__init__(coordinator)
         self._serial = serial

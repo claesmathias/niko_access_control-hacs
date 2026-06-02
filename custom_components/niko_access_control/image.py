@@ -65,6 +65,7 @@ def _device_info(serial: str) -> DeviceInfo:
 class NikoCallImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
     """Image entity for a single position in the call history (slot 0 = most recent)."""
 
+    _attr_has_entity_name = True
     _attr_content_type = "image/jpeg"
 
     def __init__(self, coordinator: NikoCoordinator, serial: str, slot: int) -> None:
