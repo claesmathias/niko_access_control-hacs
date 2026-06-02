@@ -70,7 +70,7 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
             raise UpdateFailed(str(err)) from err
 
     async def _fetch(self) -> CoordinatorData:
-        calls = await self.api.get_calls(self.device_serial, count=10)
+        calls = await self.api.get_calls(self.device_serial, count=20)
 
         # Device info and online status are best-effort — don't fail the update if unavailable
         device_info: DeviceInfo | None = None

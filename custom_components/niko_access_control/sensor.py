@@ -45,14 +45,17 @@ async def async_setup_entry(
         NikoLastCallStatusSensor(coordinator, serial),
         NikoCallCountSensor(coordinator, serial),
         # Device info (diagnostic)
-        NikoDeviceInfoSensor(coordinator, serial, "firmware_version",        "Firmware Version",  "mdi:chip"),
-        NikoDeviceInfoSensor(coordinator, serial, "firmware_released_date",  "Firmware Build",    "mdi:calendar"),
-        NikoDeviceInfoSensor(coordinator, serial, "hardware_version_display","Hardware Version",  "mdi:memory"),
-        NikoDeviceInfoSensor(coordinator, serial, "model",                   "Model",             "mdi:identifier"),
-        NikoDeviceInfoSensor(coordinator, serial, "serial_number",           "Serial Number",     "mdi:barcode"),
-        NikoDeviceInfoSensor(coordinator, serial, "mac_address",             "MAC Address",       "mdi:lan"),
-        NikoDeviceInfoSensor(coordinator, serial, "ip_address",              "IP Address",        "mdi:ip-network"),
-        NikoDeviceInfoSensor(coordinator, serial, "device_name",             "Device Name",       "mdi:doorbell"),
+        NikoDeviceInfoSensor(coordinator, serial, "firmware_version",         "Firmware Version", "mdi:chip"),
+        NikoDeviceInfoSensor(coordinator, serial, "firmware_released_date",  "Firmware Build",   "mdi:calendar"),
+        # hardware_version_display falls back to firmware build date when empty;
+        # unique_id_suffix="hardware_version" reuses the existing registry entry
+        NikoDeviceInfoSensor(coordinator, serial, "hardware_version_display","Hardware Version", "mdi:memory",
+                             unique_id_suffix="hardware_version"),
+        NikoDeviceInfoSensor(coordinator, serial, "model",                   "Model",            "mdi:identifier"),
+        NikoDeviceInfoSensor(coordinator, serial, "serial_number",           "Serial Number",    "mdi:barcode"),
+        NikoDeviceInfoSensor(coordinator, serial, "mac_address",             "MAC Address",      "mdi:lan"),
+        NikoDeviceInfoSensor(coordinator, serial, "ip_address",              "IP Address",       "mdi:ip-network"),
+        NikoDeviceInfoSensor(coordinator, serial, "device_name",             "Device Name",      "mdi:doorbell"),
     ])
 
 
@@ -111,7 +114,7 @@ class NikoLastCallStatusSensor(_NikoBase):
 
 
 class NikoCallCountSensor(_NikoBase):
-    _attr_name = "Total Calls (last 10)"
+    _attr_name = "Total Calls (last 20)"
     _attr_icon = "mdi:counter"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -135,11 +138,14 @@ class NikoDeviceInfoSensor(_NikoBase):
         attr: str,
         name: str,
         icon: str,
+        unique_id_suffix: str | None = None,
     ) -> None:
         super().__init__(coordinator, serial)
         self._attr_name = name
         self._attr_icon = icon
-        self._attr_unique_id = f"{serial}_info_{attr}"
+        # unique_id_suffix lets us keep a stable registry ID while changing attr
+        suffix = unique_id_suffix or attr
+        self._attr_unique_id = f"{serial}_info_{suffix}"
         self._attr = attr
 
     @property
