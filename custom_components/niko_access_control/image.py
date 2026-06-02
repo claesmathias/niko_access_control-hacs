@@ -26,6 +26,10 @@ async def async_setup_entry(
 ) -> None:
     coordinator: NikoCoordinator = hass.data[DOMAIN][entry.entry_id]
     serial = entry.data[CONF_DEVICE_SERIAL]
+
+    # Stable entity that always shows the latest call — registered once, never removed
+    async_add_entities([NikoLatestCallImage(coordinator, serial)])
+
     added_slots: set[int] = set()
 
     def _add_new_slots() -> None:
@@ -142,5 +146,70 @@ class NikoCallImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
             self._cached = await self.coordinator.api.get_picture(url)
         except Exception as err:
             _LOGGER.warning("Slot %d: failed to download snapshot: %s", self._slot, err)
+            return None
+        return self._cached
+
+
+class NikoLatestCallImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
+    """Stable image entity that always shows the most recent call snapshot."""
+
+    _attr_has_entity_name = True
+    _attr_content_type = "image/jpeg"
+    _attr_name = "Last Call"
+    _attr_icon = "mdi:doorbell-video"
+
+    def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
+        CoordinatorEntity.__init__(self, coordinator)
+        ImageEntity.__init__(self, coordinator.hass)
+        self._attr_unique_id = f"{serial}_latest_call_snapshot"
+        self._attr_device_info = _device_info(serial)
+        self._pic_url: str | None = None
+        self._cached: bytes | None = None
+
+    def _call(self) -> CallingInfo | None:
+        data = self.coordinator.data
+        return data.calls[0] if data and data.calls else None
+
+    @property
+    def icon(self) -> str:
+        call = self._call()
+        if not call:
+            return "mdi:doorbell-video"
+        return "mdi:phone-check" if call.is_answered else "mdi:phone-missed"
+
+    @property
+    def image_last_updated(self) -> datetime | None:
+        call = self._call()
+        return _localise(call.calling_datetime) if call else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        call = self._call()
+        if not call:
+            return {}
+        return {
+            "calling_time": call.calling_time,
+            "status": call.status_label,
+            "calling_id": call.calling_id,
+        }
+
+    def _handle_coordinator_update(self) -> None:
+        call = self._call()
+        new_url = call.pic_url if call else None
+        if new_url != self._pic_url:
+            self._pic_url = new_url
+            self._cached = None
+        super()._handle_coordinator_update()
+
+    async def async_image(self) -> bytes | None:
+        url = self._pic_url
+        if not url:
+            return None
+        if self._cached is not None:
+            return self._cached
+        try:
+            self._cached = await self.coordinator.api.get_picture(url)
+        except Exception as err:
+            _LOGGER.warning("Latest call: failed to download snapshot: %s", err)
             return None
         return self._cached
