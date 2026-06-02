@@ -22,7 +22,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     api = HikConnectAPI(session)
     await api.login(entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD])
 
-    coordinator = NikoCoordinator(hass, api, entry.data[CONF_DEVICE_SERIAL])
+    coordinator = NikoCoordinator(
+        hass, api,
+        entry.data[CONF_DEVICE_SERIAL],
+        username=entry.data[CONF_USERNAME],
+        password=entry.data[CONF_PASSWORD],
+    )
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

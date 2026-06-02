@@ -10,7 +10,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import CallingInfo, DeviceInfo, HikConnectAPI, HikConnectAuthError, HikConnectError
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, CONF_DEVICE_SERIAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,9 +34,13 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
         hass: HomeAssistant,
         api: HikConnectAPI,
         device_serial: str,
+        username: str = "",
+        password: str = "",
     ) -> None:
         self.api = api
         self.device_serial = device_serial
+        self._username = username
+        self._password = password
         super().__init__(
             hass,
             _LOGGER,
@@ -48,11 +52,20 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
         try:
             return await self._fetch()
         except HikConnectAuthError:
+            # 1. Try refreshing the token first
             try:
                 await self.api.refresh_session()
                 return await self._fetch()
-            except HikConnectAuthError as err:
-                raise ConfigEntryAuthFailed(str(err)) from err
+            except HikConnectAuthError:
+                pass
+            # 2. Refresh token expired — full re-login with stored credentials
+            if self._username and self._password:
+                try:
+                    await self.api.login(self._username, self._password)
+                    return await self._fetch()
+                except HikConnectAuthError as err:
+                    raise ConfigEntryAuthFailed(str(err)) from err
+            raise ConfigEntryAuthFailed("Session expired and no credentials stored for re-login")
         except HikConnectError as err:
             raise UpdateFailed(str(err)) from err
 
@@ -70,8 +83,7 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
         try:
             status = await self.api.get_call_status(self.device_serial)
-            if status:
-                online = True
+            online = status.get("rc") == 1
         except Exception as err:
             _LOGGER.debug("Call status unavailable: %s", err)
 

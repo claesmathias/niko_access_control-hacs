@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from homeassistant.util import dt as dt_util
+
 from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -50,7 +52,15 @@ class NikoDoorbellImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
     @property
     def image_last_updated(self) -> datetime | None:
         call = self.coordinator.data.last_call if self.coordinator.data else None
-        return call.calling_datetime if call else None
+        if not call:
+            return None
+        dt = call.calling_datetime
+        if dt is None:
+            return None
+        tz = dt_util.DEFAULT_TIME_ZONE
+        if hasattr(tz, "localize"):
+            return tz.localize(dt)
+        return dt.replace(tzinfo=tz)
 
     def _handle_coordinator_update(self) -> None:
         call = self.coordinator.data.last_call if self.coordinator.data else None

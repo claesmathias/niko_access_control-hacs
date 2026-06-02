@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from homeassistant.util import dt as dt_util
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -18,6 +20,16 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_DEVICE_SERIAL, DOMAIN
 from .coordinator import CoordinatorData, NikoCoordinator
+
+
+def _localise(naive: datetime | None) -> datetime | None:
+    """Convert a naive API datetime (device local time) to HA-aware datetime."""
+    if naive is None:
+        return None
+    tz = dt_util.DEFAULT_TIME_ZONE
+    if hasattr(tz, "localize"):  # pytz
+        return tz.localize(naive)
+    return naive.replace(tzinfo=tz)
 
 
 async def async_setup_entry(
@@ -71,7 +83,7 @@ class NikoLastCallTimeSensor(_NikoBase):
     @property
     def native_value(self) -> datetime | None:
         call = self.coordinator.data.last_call if self.coordinator.data else None
-        return call.calling_datetime if call else None
+        return _localise(call.calling_datetime) if call else None
 
     @property
     def extra_state_attributes(self) -> dict:

@@ -46,10 +46,9 @@ class CallingInfo:
 
     @property
     def calling_datetime(self) -> datetime | None:
+        """Return a naive datetime; callers must localise with dt_util."""
         try:
-            return datetime.strptime(self.calling_time, "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=timezone.utc
-            )
+            return datetime.strptime(self.calling_time, "%Y-%m-%d %H:%M:%S")
         except (ValueError, TypeError):
             return None
 
@@ -193,6 +192,8 @@ class HikConnectAPI:
             params = {"msgStatus": msg_status, "pageSize": count}
             try:
                 resp = await self._get(path, params=params)
+            except HikConnectAuthError:
+                raise  # Let coordinator handle session refresh
             except Exception as err:
                 _LOGGER.debug("get_calls msgStatus=%s failed: %s", msg_status, err)
                 continue
@@ -284,12 +285,18 @@ class HikConnectAPI:
     # ------------------------------------------------------------------
 
     async def get_call_status(self, device_serial: str) -> dict[str, Any]:
-        """Return call/device status from /v3/devconfig/v1/call/{serial}/status."""
+        """Return parsed call/device status; rc==1 means device is online."""
+        import json as _json
         try:
             resp = await self._get(f"/v3/devconfig/v1/call/{device_serial}/status")
             meta_code = str(resp.get("meta", {}).get("code", resp.get("code", "")))
             if meta_code == "200":
-                return resp.get("data", resp)
+                raw = resp.get("data", {})
+                if isinstance(raw, str):
+                    return _json.loads(raw)
+                return raw
+        except HikConnectAuthError:
+            raise
         except Exception as err:
             _LOGGER.debug("get_call_status failed: %s", err)
         return {}
