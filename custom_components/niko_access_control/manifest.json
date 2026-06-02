@@ -1,7 +1,7 @@
 {
   "domain": "niko_access_control",
   "name": "Niko Access Control",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "documentation": "https://github.com/claesmathias/niko-access-control-hacs",
   "issue_tracker": "https://github.com/claesmathias/niko-access-control-hacs/issues",
   "requirements": ["aiohttp>=3.9.0"],

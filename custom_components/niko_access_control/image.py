@@ -13,7 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .api import CallingInfo
-from .const import CONF_DEVICE_SERIAL, DOMAIN, HISTORY_SLOTS
+from .const import CONF_DEVICE_SERIAL, DOMAIN
 from .coordinator import NikoCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,9 +26,22 @@ async def async_setup_entry(
 ) -> None:
     coordinator: NikoCoordinator = hass.data[DOMAIN][entry.entry_id]
     serial = entry.data[CONF_DEVICE_SERIAL]
-    async_add_entities(
-        [NikoCallImage(coordinator, serial, slot) for slot in range(HISTORY_SLOTS)]
-    )
+    added_slots: set[int] = set()
+
+    def _add_new_slots() -> None:
+        calls = coordinator.data.calls if coordinator.data else []
+        new_entities = [
+            NikoCallImage(coordinator, serial, slot)
+            for slot in range(len(calls))
+            if slot not in added_slots
+        ]
+        for e in new_entities:
+            added_slots.add(e._slot)
+        if new_entities:
+            async_add_entities(new_entities)
+
+    _add_new_slots()
+    entry.async_on_unload(coordinator.async_add_listener(_add_new_slots))
 
 
 def _localise(naive: datetime | None) -> datetime | None:
@@ -69,9 +82,6 @@ class NikoCallImage(CoordinatorEntity[NikoCoordinator], ImageEntity):
         self._attr_device_info = _device_info(serial)
         self._pic_url: str | None = None
         self._cached: bytes | None = None
-
-    # ── dynamic name: emoji + date so the name itself is informative without
-    #    duplicating the status text that HA shows via the card state label ──
 
     @property
     def name(self) -> str:
