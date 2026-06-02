@@ -13,13 +13,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .api import CallingInfo
-from .const import CONF_DEVICE_SERIAL, DOMAIN
+from .const import CONF_DEVICE_SERIAL, DOMAIN, HISTORY_SLOTS
 from .coordinator import NikoCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-# Number of per-call history image entities (slot 0 = most recent)
-HISTORY_SLOTS = 20
 
 
 async def async_setup_entry(

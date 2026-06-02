@@ -10,7 +10,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import CallingInfo, DeviceInfo, HikConnectAPI, HikConnectAuthError, HikConnectError
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, CONF_DEVICE_SERIAL
+from .const import CONF_DEVICE_SERIAL, DEFAULT_SCAN_INTERVAL, DOMAIN, HISTORY_SLOTS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
             raise UpdateFailed(str(err)) from err
 
     async def _fetch(self) -> CoordinatorData:
-        calls = await self.api.get_calls(self.device_serial, count=20)
+        calls = await self.api.get_calls(self.device_serial, count=HISTORY_SLOTS)
 
         # Device info and online status are best-effort — don't fail the update if unavailable
         device_info: DeviceInfo | None = None

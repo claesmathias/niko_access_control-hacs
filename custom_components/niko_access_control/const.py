@@ -18,6 +18,8 @@ APP_CHANNEL = "APPSTORE"
 
 DEFAULT_SCAN_INTERVAL = 30  # seconds
 
+HISTORY_SLOTS = 50  # number of call-history image entities (slot 0 = most recent)
+
 # Calling status values
 CALLING_STATUS_ANSWERED = 1
 CALLING_STATUS_MISSED = 2  # observed in real API responses
