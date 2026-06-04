@@ -258,8 +258,7 @@ async def integration_test() -> None:
     Run this WHILE the doorbell is being pressed for a real end-to-end test.
     """
     import aiohttp
-    sys.path.insert(0, str(Path(__file__).parent / "custom_components"))
-    from niko_access_control.api import HikConnectAPI
+    HikConnectAPI = _load_api_module().HikConnectAPI
 
     if not USERNAME or not PASSWORD or not DEVICE_SERIAL:
         print("❌  Set NIKO_USERNAME / NIKO_PASSWORD / NIKO_DEVICE_SERIAL in .env")
