@@ -283,8 +283,8 @@ async def integration_test() -> None:
 
         print(f"\n{SEP}\nANSWER CALL (cmdId=2 / ISAPI callSignal)\n{SEP}")
         print("  ⚠️  Please press the doorbell now.")
-        print("  Waiting 15 seconds for you to ring before answering…")
-        for remaining in range(15, 0, -1):
+        print("  Waiting 30 seconds for you to ring before answering…")
+        for remaining in range(30, 0, -1):
             print(f"  Answering in {remaining}s…", end="\r", flush=True)
             await asyncio.sleep(1)
         print()
