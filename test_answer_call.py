@@ -1,20 +1,31 @@
 """
-Integration + unit tests for doorbell call answering.
+Integration + unit tests for doorbell call answering and local ISAPI audio.
 
-Integration test (runs against real API, needs .env):
-    .venv/bin/python3 test_answer_call.py
+Integration tests (real device, needs .env):
+    .venv/bin/python3 test_answer_call.py           # cloud call-answer test
+    .venv/bin/python3 test_answer_call.py --audio    # local ISAPI audio test (no call needed)
 
 Unit tests (mocked, no network):
     .venv/bin/python3 -m pytest test_answer_call.py -v
+
+.env keys:
+    NIKO_USERNAME, NIKO_PASSWORD, NIKO_DEVICE_SERIAL   – HikConnect cloud
+    NIKO_LOCAL_HOST       – doorbell LAN IP (default: 192.168.11.83)
+    NIKO_LOCAL_USERNAME   – device admin username (default: admin)
+    NIKO_LOCAL_PASSWORD   – device admin password
 """
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
+import math
 import os
+import struct
 import sys
 import uuid
+import wave
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -82,6 +93,9 @@ load_env()
 USERNAME      = os.environ.get("NIKO_USERNAME", "")
 PASSWORD      = os.environ.get("NIKO_PASSWORD", "")
 DEVICE_SERIAL = os.environ.get("NIKO_DEVICE_SERIAL", "")
+LOCAL_HOST     = os.environ.get("NIKO_LOCAL_HOST", "192.168.11.83")
+LOCAL_USERNAME = os.environ.get("NIKO_LOCAL_USERNAME", "admin")
+LOCAL_PASSWORD = os.environ.get("NIKO_LOCAL_PASSWORD", "")
 SEP = "=" * 70
 
 
@@ -315,5 +329,67 @@ async def integration_test() -> None:
     print(f"\n{SEP}\nDone.\n{SEP}\n")
 
 
+# ── local ISAPI audio test (no call needed) ──────────────────────────────────
+
+def _generate_tone_wav(freq: int = 440, duration: float = 10.0, sample_rate: int = 44100) -> bytes:
+    """Return a WAV containing a pure sine-wave tone."""
+    n = int(sample_rate * duration)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)          # 16-bit
+        wf.setframerate(sample_rate)
+        for i in range(n):
+            v = int(32767 * math.sin(2 * math.pi * freq * i / sample_rate))
+            wf.writeframes(struct.pack("<h", v))
+    return buf.getvalue()
+
+
+async def local_audio_test() -> None:
+    """Stream a 10-second 440 Hz tone to the doorbell speaker via local ISAPI.
+
+    No active call is required — the test opens the two-way audio channel
+    directly.  You should hear a steady tone from the doorbell.
+
+    Requires NIKO_LOCAL_HOST / NIKO_LOCAL_USERNAME / NIKO_LOCAL_PASSWORD in .env.
+    """
+    api_mod = _load_api_module()
+    LocalISAPIClient = api_mod.LocalISAPIClient
+    wav_to_mulaw = api_mod.wav_to_mulaw
+
+    if not LOCAL_PASSWORD:
+        print("❌  Set NIKO_LOCAL_PASSWORD (and optionally NIKO_LOCAL_HOST / NIKO_LOCAL_USERNAME) in .env")
+        return
+
+    print(f"\n{SEP}\nLOCAL ISAPI AUDIO TEST\n{SEP}")
+    print(f"  Host     : {LOCAL_HOST}")
+    print(f"  Username : {LOCAL_USERNAME}")
+
+    client = LocalISAPIClient(LOCAL_HOST, LOCAL_USERNAME, LOCAL_PASSWORD)
+
+    print("\n  Testing connection…")
+    reachable = await client.test_connection()
+    if not reachable:
+        print("  ❌  Cannot reach doorbell — check IP and credentials.")
+        return
+    print("  ✅ Connected")
+
+    print("\n  Generating 10 s 440 Hz tone…")
+    wav_bytes = _generate_tone_wav(freq=440, duration=10.0)
+    print(f"  WAV size : {len(wav_bytes):,} bytes")
+
+    pcm_bytes = wav_to_mulaw(wav_bytes)
+    print(f"  µ-law size: {len(pcm_bytes):,} bytes  (8 kHz mono)")
+
+    print("\n  Opening two-way audio channel and streaming — you should hear a tone…")
+    ok = await client.speak(pcm_bytes)
+    print(f"\n  Stream → {'✅ OK' if ok else '❌ Failed'}")
+
+    print(f"\n{SEP}\nDone.\n{SEP}\n")
+
+
 if __name__ == "__main__":
-    asyncio.run(integration_test())
+    if "--audio" in sys.argv:
+        asyncio.run(local_audio_test())
+    else:
+        asyncio.run(integration_test())
