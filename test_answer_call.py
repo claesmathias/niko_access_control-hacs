@@ -282,12 +282,26 @@ async def integration_test() -> None:
             print(f"  call infos failed: {e}")
 
         print(f"\n{SEP}\nANSWER CALL (cmdId=2 / ISAPI callSignal)\n{SEP}")
-        print("  ⚠️  Please press the doorbell now.")
-        print("  Waiting 30 seconds for you to ring before answering…")
-        for remaining in range(30, 0, -1):
-            print(f"  Answering in {remaining}s…", end="\r", flush=True)
-            await asyncio.sleep(1)
-        print()
+
+        # Answer immediately if a call is already ringing, otherwise poll for up to 60s.
+        call_detected = status.get("callStatus") == 1
+        if call_detected:
+            print("  Active call already detected — answering immediately…")
+        else:
+            print("  ⚠️  Please press the doorbell now. Waiting up to 60 seconds…")
+            for remaining in range(60, 0, -1):
+                status = await api.get_call_status(DEVICE_SERIAL)
+                if status.get("callStatus") == 1:
+                    print(f"\n  Incoming call detected! Answering now…")
+                    call_detected = True
+                    break
+                print(f"  Waiting for incoming call… {remaining}s", end="\r", flush=True)
+                await asyncio.sleep(1)
+            print()
+
+        if not call_detected:
+            print("  ⚠️  No call detected within 60 seconds — aborting.")
+            return
 
         result = await api.answer_call(DEVICE_SERIAL)
         print(f"  answer_call → {'✅ OK' if result else '❌ Failed'}")
