@@ -288,6 +288,72 @@ class HikConnectAPI:
             return None
 
     # ------------------------------------------------------------------
+    # Call control (answer / reject / hangup)
+    # ------------------------------------------------------------------
+
+    async def answer_call(self, device_serial: str) -> bool:
+        """Answer an incoming doorbell call.
+
+        Tries ISAPI callSignal first (newer devices); falls back to the
+        cloud callOperation endpoint (cmdId=2).
+        """
+        if await self._isapi_call_signal(device_serial, "answer"):
+            return True
+        return await self._call_operation(device_serial, cmd_id=2)
+
+    async def reject_call(self, device_serial: str) -> bool:
+        """Reject an incoming doorbell call (cmdId=3 / cmeType='reject')."""
+        if await self._isapi_call_signal(device_serial, "reject"):
+            return True
+        return await self._call_operation(device_serial, cmd_id=3)
+
+    async def hangup_call(self, device_serial: str) -> bool:
+        """Hang up an active call (cmdId=5, no ISAPI equivalent)."""
+        return await self._call_operation(device_serial, cmd_id=5)
+
+    async def _isapi_call_signal(self, device_serial: str, cme_type: str) -> bool:
+        """Send callSignal via ISAPI transparent channel (newer devices)."""
+        import json as _json
+        body = _json.dumps({"callSignal": {"cmeType": cme_type, "sessionId": self._client_no}})
+        transmission = f"PUT /ISAPI/VideoIntercom/callSignal?format=json\r\n{body}"
+        try:
+            resp = await self._post(
+                "/api/device/isapi",
+                data={"subSerial": device_serial, "cmdId": "19713", "transmissionData": transmission},
+            )
+        except Exception as err:
+            _LOGGER.debug("_isapi_call_signal %s failed: %s", cme_type, err)
+            return False
+        raw = resp.get("data") or resp.get("msg", "")
+        if isinstance(raw, str):
+            try:
+                parsed = _json.loads(raw)
+                return parsed.get("ResponseStatus", {}).get("statusCode") == 1
+            except Exception:
+                pass
+        return str(resp.get("meta", {}).get("code", "")) == "200"
+
+    async def _call_operation(self, device_serial: str, cmd_id: int) -> bool:
+        """PUT /v3/devconfig/v1/call/{serial}/operation?cmdId=N&handler=<user>."""
+        url = f"{self._base_url}/v3/devconfig/v1/call/{device_serial}/operation"
+        params = {"cmdId": cmd_id, "handler": self._client_no}
+        try:
+            async with self._session.put(
+                url,
+                params=params,
+                headers=self._common_headers(),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                body = await resp.json(content_type=None)
+            rc = body.get("data", {})
+            if isinstance(rc, dict):
+                return rc.get("rc", 0) == 1
+            return str(body.get("meta", {}).get("code", "")) == "200"
+        except Exception as err:
+            _LOGGER.debug("_call_operation cmdId=%d failed: %s", cmd_id, err)
+            return False
+
+    # ------------------------------------------------------------------
     # Online / call status
     # ------------------------------------------------------------------
 
