@@ -32,9 +32,12 @@ PLATFORMS = [
 ]
 
 SERVICE_ANSWER_CALL = "answer_call"
+SERVICE_REJECT_CALL = "reject_call"
+SERVICE_HANGUP_CALL = "hangup_call"
 SERVICE_ANNOUNCE = "announce"
 
-_ANSWER_SCHEMA = vol.Schema({vol.Required(CONF_DEVICE_SERIAL): cv.string})
+_CALL_SCHEMA = vol.Schema({vol.Required(CONF_DEVICE_SERIAL): cv.string})
+_ANSWER_SCHEMA = _CALL_SCHEMA  # kept for compatibility
 _ANNOUNCE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_DEVICE_SERIAL): cv.string,
@@ -95,6 +98,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if not ok:
                 raise HomeAssistantError(f"answer_call failed for {serial}")
 
+        async def _reject_call(call: ServiceCall) -> None:
+            serial = call.data[CONF_DEVICE_SERIAL]
+            coordinator = _coordinator_for(hass, serial)
+            ok = await coordinator.api.reject_call(serial)
+            if not ok:
+                raise HomeAssistantError(f"reject_call failed for {serial}")
+
+        async def _hangup_call(call: ServiceCall) -> None:
+            serial = call.data[CONF_DEVICE_SERIAL]
+            coordinator = _coordinator_for(hass, serial)
+            ok = await coordinator.api.hangup_call(serial)
+            if not ok:
+                raise HomeAssistantError(f"hangup_call failed for {serial}")
+
         async def _announce(call: ServiceCall) -> None:
             serial = call.data[CONF_DEVICE_SERIAL]
             message = call.data.get("message")
@@ -133,7 +150,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if not ok:
                 raise HomeAssistantError("Failed to stream audio to doorbell via ISAPI")
 
-        hass.services.async_register(DOMAIN, SERVICE_ANSWER_CALL, _answer_call, _ANSWER_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_ANSWER_CALL, _answer_call, _CALL_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_REJECT_CALL, _reject_call, _CALL_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_HANGUP_CALL, _hangup_call, _CALL_SCHEMA)
         hass.services.async_register(DOMAIN, SERVICE_ANNOUNCE, _announce, _ANNOUNCE_SCHEMA)
 
     return True

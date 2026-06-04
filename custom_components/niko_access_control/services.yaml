@@ -9,6 +9,28 @@ answer_call:
       selector:
         text:
 
+reject_call:
+  name: Reject call
+  description: Reject an incoming doorbell call (equivalent to pressing "decline").
+  fields:
+    device_serial:
+      name: Device serial
+      description: Serial number of the doorbell.
+      required: true
+      selector:
+        text:
+
+hangup_call:
+  name: Hang up call
+  description: Hang up an active doorbell call.
+  fields:
+    device_serial:
+      name: Device serial
+      description: Serial number of the doorbell.
+      required: true
+      selector:
+        text:
+
 announce:
   name: Announce
   description: >
