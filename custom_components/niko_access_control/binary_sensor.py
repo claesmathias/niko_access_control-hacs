@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_DEVICE_SERIAL, DOMAIN
-from .coordinator import NikoCoordinator
+from .coordinator import NikoCallStatusCoordinator, NikoCoordinator
 
 
 async def async_setup_entry(
@@ -22,7 +22,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: NikoCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([NikoOnlineSensor(coordinator, entry.data[CONF_DEVICE_SERIAL])])
+    serial = entry.data[CONF_DEVICE_SERIAL]
+    async_add_entities([
+        NikoOnlineSensor(coordinator, serial),
+        NikoRingingSensor(coordinator.ring_coordinator, serial),
+    ])
 
 
 class NikoOnlineSensor(CoordinatorEntity[NikoCoordinator], BinarySensorEntity):
@@ -54,3 +58,30 @@ class NikoOnlineSensor(CoordinatorEntity[NikoCoordinator], BinarySensorEntity):
         if data.online is not None:
             return data.online
         return len(data.calls) > 0
+
+
+class NikoRingingSensor(CoordinatorEntity[NikoCallStatusCoordinator], BinarySensorEntity):
+    """True while someone is pressing the doorbell button (callStatus == 1)."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Ringing"
+    _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
+    _attr_icon = "mdi:doorbell"
+
+    def __init__(self, coordinator: NikoCallStatusCoordinator, serial: str) -> None:
+        super().__init__(coordinator)
+        self._serial = serial
+        self._attr_unique_id = f"{serial}_ringing"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, serial)},
+            name=f"Niko Doorbell {serial}",
+            manufacturer="Niko / Hikvision",
+            model="Access Control Doorbell",
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        status = self.coordinator.data
+        if status is None:
+            return None
+        return status.get("callStatus") == 1

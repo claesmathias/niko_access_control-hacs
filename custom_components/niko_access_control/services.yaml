@@ -1,0 +1,50 @@
+answer_call:
+  name: Answer call
+  description: Answer an incoming doorbell call via the HikConnect cloud API.
+  fields:
+    device_serial:
+      name: Device serial
+      description: Serial number of the doorbell (e.g. F41404037).
+      required: true
+      selector:
+        text:
+
+announce:
+  name: Announce
+  description: >
+    Answer an incoming doorbell call and play a TTS message through the
+    doorbell speaker via the local ISAPI two-way audio channel.
+    Requires the local IP and credentials to be configured in Options.
+  fields:
+    device_serial:
+      name: Device serial
+      description: Serial number of the doorbell.
+      required: true
+      selector:
+        text:
+    message:
+      name: Message
+      description: Text to speak (uses the default HA TTS engine). Either this or media_url is required.
+      required: false
+      selector:
+        text:
+    media_url:
+      name: Media URL
+      description: URL of an audio file to play instead of generating TTS.
+      required: false
+      selector:
+        text:
+    language:
+      name: Language
+      description: BCP-47 language code for TTS (e.g. en, nl, fr).
+      required: false
+      default: "en"
+      selector:
+        text:
+    answer_first:
+      name: Answer first
+      description: Answer the call via cloud API before streaming audio.
+      required: false
+      default: true
+      selector:
+        boolean:

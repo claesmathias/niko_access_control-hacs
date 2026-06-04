@@ -1,14 +1,29 @@
 """HikConnect API client for Niko Access Control."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import io
 import logging
 import uuid
+import wave
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
+
+try:
+    import audioop as _audioop
+    _AUDIOOP_OK = True
+except ImportError:
+    _AUDIOOP_OK = False  # Python 3.13+
+
+try:
+    import httpx as _httpx
+    _HTTPX_OK = True
+except ImportError:
+    _HTTPX_OK = False
 
 from .const import (
     API_BASE_URL,
@@ -441,3 +456,134 @@ class HikConnectAPI:
             if err.status in (401, 403):
                 raise HikConnectAuthError(str(err)) from err
             raise HikConnectError(str(err)) from err
+
+
+# ---------------------------------------------------------------------------
+# Local ISAPI two-way audio (direct LAN access, Digest Auth)
+# ---------------------------------------------------------------------------
+
+class LocalISAPIClient:
+    """Streams audio to the doorbell via the local ISAPI HTTP interface.
+
+    Uses HTTP Digest Auth (httpx).  The audio must be G.711 µ-law encoded at
+    8 kHz mono — use ``wav_to_mulaw`` / ``audio_to_mulaw`` to convert TTS output.
+    """
+
+    _CHANNEL = 1
+
+    def __init__(self, host: str, username: str, password: str) -> None:
+        if not _HTTPX_OK:
+            raise RuntimeError("httpx is required for local ISAPI access (pip install httpx)")
+        self._base = f"http://{host}"
+        self._username = username
+        self._password = password
+
+    def _client(self) -> "_httpx.AsyncClient":
+        return _httpx.AsyncClient(
+            auth=_httpx.DigestAuth(self._username, self._password),
+            timeout=15.0,
+        )
+
+    async def test_connection(self) -> bool:
+        """Return True if the device is reachable and credentials are valid."""
+        try:
+            async with self._client() as c:
+                resp = await c.get(f"{self._base}/ISAPI/System/deviceInfo")
+                return resp.status_code == 200
+        except Exception as err:
+            _LOGGER.debug("LocalISAPI test_connection failed: %s", err)
+            return False
+
+    async def speak(self, pcm_mulaw_bytes: bytes) -> bool:
+        """Open the two-way audio channel, stream PCM µ-law data, then close."""
+        if not await self._open():
+            return False
+        ok = await self._send(pcm_mulaw_bytes)
+        await self._close()
+        return ok
+
+    async def _open(self) -> bool:
+        path = f"/ISAPI/System/twoWayAudio/channels/{self._CHANNEL}/open"
+        try:
+            async with self._client() as c:
+                resp = await c.put(
+                    self._base + path,
+                    headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
+                    content=b"",
+                )
+                _LOGGER.debug("twoWayAudio open → %d", resp.status_code)
+                return resp.status_code in (200, 201)
+        except Exception as err:
+            _LOGGER.debug("twoWayAudio open failed: %s", err)
+            return False
+
+    async def _send(self, data: bytes) -> bool:
+        path = f"/ISAPI/System/twoWayAudio/channels/{self._CHANNEL}/audioData"
+        try:
+            async with self._client() as c:
+                resp = await c.put(
+                    self._base + path,
+                    content=data,
+                    headers={"Content-Type": "application/octet-stream"},
+                    timeout=30.0,
+                )
+                _LOGGER.debug("twoWayAudio send %d bytes → %d", len(data), resp.status_code)
+                return resp.status_code in (200, 201, 204)
+        except Exception as err:
+            _LOGGER.debug("twoWayAudio send failed: %s", err)
+            return False
+
+    async def _close(self) -> None:
+        path = f"/ISAPI/System/twoWayAudio/channels/{self._CHANNEL}/close"
+        try:
+            async with self._client() as c:
+                await c.put(self._base + path, content=b"")
+        except Exception as err:
+            _LOGGER.debug("twoWayAudio close failed: %s", err)
+
+
+# ---------------------------------------------------------------------------
+# Audio conversion helpers (WAV/MP3 → G.711 µ-law 8 kHz mono)
+# ---------------------------------------------------------------------------
+
+def wav_to_mulaw(wav_bytes: bytes) -> bytes:
+    """Convert WAV bytes to raw G.711 µ-law 8 kHz mono using stdlib audioop."""
+    if not _AUDIOOP_OK:
+        raise RuntimeError("audioop not available; use audio_to_mulaw with ffmpeg instead")
+    with wave.open(io.BytesIO(wav_bytes)) as wf:
+        channels = wf.getnchannels()
+        sample_width = wf.getsampwidth()
+        framerate = wf.getframerate()
+        pcm = wf.readframes(wf.getnframes())
+    if channels == 2:
+        pcm = _audioop.tomono(pcm, sample_width, 0.5, 0.5)
+    if sample_width != 2:
+        pcm = _audioop.lin2lin(pcm, sample_width, 2)
+        sample_width = 2
+    if framerate != 8000:
+        pcm, _ = _audioop.ratecv(pcm, sample_width, 1, framerate, 8000, None)
+    return _audioop.lin2ulaw(pcm, 2)
+
+
+async def audio_to_mulaw(audio_bytes: bytes, mime_type: str) -> bytes:
+    """Convert arbitrary audio (WAV or MP3) to G.711 µ-law 8 kHz mono.
+
+    Uses audioop for WAV; falls back to an ffmpeg subprocess for other formats.
+    """
+    is_wav = "wav" in mime_type or audio_bytes[:4] == b"RIFF"
+    if is_wav and _AUDIOOP_OK:
+        return wav_to_mulaw(audio_bytes)
+
+    # ffmpeg fallback (handles MP3, OGG, etc.)
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-i", "pipe:0",
+        "-ar", "8000", "-ac", "1",
+        "-acodec", "pcm_mulaw", "-f", "mulaw", "pipe:1",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate(audio_bytes)
+    if not stdout:
+        raise RuntimeError("ffmpeg produced no audio output — is ffmpeg installed?")
+    return stdout

@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import CallingInfo, DeviceInfo, HikConnectAPI, HikConnectAuthError, HikConnectError
+from .api import CallingInfo, DeviceInfo, HikConnectAPI, HikConnectAuthError, HikConnectError, LocalISAPIClient
 from .const import CONF_DEVICE_SERIAL, DEFAULT_SCAN_INTERVAL, DOMAIN, HISTORY_SLOTS
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,6 +20,7 @@ class CoordinatorData:
     calls: list[CallingInfo] = field(default_factory=list)
     device_info: DeviceInfo | None = None
     online: bool | None = None
+    ringing: bool = False
 
     @property
     def last_call(self) -> CallingInfo | None:
@@ -36,11 +37,13 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
         device_serial: str,
         username: str = "",
         password: str = "",
+        local_client: LocalISAPIClient | None = None,
     ) -> None:
         self.api = api
         self.device_serial = device_serial
         self._username = username
         self._password = password
+        self.local_client = local_client
         super().__init__(
             hass,
             _LOGGER,
@@ -81,10 +84,36 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
         except Exception as err:
             _LOGGER.debug("Device info unavailable: %s", err)
 
+        ringing = False
         try:
             status = await self.api.get_call_status(self.device_serial)
             online = status.get("rc") == 1
+            ringing = status.get("callStatus") == 1
         except Exception as err:
             _LOGGER.debug("Call status unavailable: %s", err)
 
-        return CoordinatorData(calls=calls, device_info=device_info, online=online)
+        return CoordinatorData(calls=calls, device_info=device_info, online=online, ringing=ringing)
+
+
+class NikoCallStatusCoordinator(DataUpdateCoordinator[dict]):
+    """Fast-polling coordinator for ringing detection (5 s interval)."""
+
+    def __init__(self, hass: HomeAssistant, api: HikConnectAPI, device_serial: str) -> None:
+        self.api = api
+        self.device_serial = device_serial
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_ring",
+            update_interval=timedelta(seconds=5),
+        )
+
+    async def _async_update_data(self) -> dict:
+        try:
+            return await self.api.get_call_status(self.device_serial)
+        except HikConnectAuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except HikConnectError as err:
+            raise UpdateFailed(str(err)) from err
+        except Exception as err:
+            raise UpdateFailed(str(err)) from err

@@ -1,6 +1,9 @@
 DOMAIN = "niko_access_control"
 
 CONF_DEVICE_SERIAL = "device_serial"
+CONF_LOCAL_HOST = "local_host"
+CONF_LOCAL_USERNAME = "local_username"
+CONF_LOCAL_PASSWORD = "local_password"
 
 # HikConnect API base URL (EU region - determined dynamically after login)
 API_BASE_URL = "https://api.hik-connect.com"

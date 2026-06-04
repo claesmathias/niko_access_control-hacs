@@ -19,5 +19,21 @@
     "abort": {
       "already_configured": "This device is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Local device access (two-way audio)",
+        "description": "Enter the local IP address and credentials of your doorbell to enable the announce service (TTS through the doorbell speaker). Leave empty to disable.",
+        "data": {
+          "local_host": "Doorbell local IP or hostname",
+          "local_username": "Local device username",
+          "local_password": "Local device password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect_local": "Could not connect to the doorbell at the given IP. Check the IP address and credentials."
+    }
   }
 }
