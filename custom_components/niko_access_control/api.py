@@ -340,13 +340,18 @@ class HikConnectAPI:
             _LOGGER.debug("_isapi_call_signal %s failed: %s", cme_type, err)
             return False
         raw = resp.get("data") or resp.get("msg", "")
+        _LOGGER.debug("_isapi_call_signal %s raw response: %s", cme_type, resp)
         if isinstance(raw, str):
             try:
                 parsed = _json.loads(raw)
-                return parsed.get("ResponseStatus", {}).get("statusCode") == 1
+                status_code = parsed.get("ResponseStatus", {}).get("statusCode")
+                _LOGGER.debug("_isapi_call_signal %s statusCode=%s", cme_type, status_code)
+                return status_code == 1
             except Exception:
                 pass
-        return str(resp.get("meta", {}).get("code", "")) == "200"
+        # Don't accept "200 from relay" as success — that only means the cloud
+        # received the request, not that the device executed it.
+        return False
 
     async def _call_operation(self, device_serial: str, cmd_id: int) -> bool:
         """PUT /v3/devconfig/v1/call/{serial}/operation?cmdId=N&handler=<user>."""
