@@ -359,13 +359,19 @@ class HikConnectAPI:
                 headers=self._common_headers(),
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                if resp.status in (401, 403):
+                    raise HikConnectAuthError(f"Session expired (HTTP {resp.status})")
                 body = await resp.json(content_type=None)
+            _LOGGER.debug("_call_operation cmdId=%d response: %s", cmd_id, body)
             rc = body.get("data", {})
             if isinstance(rc, dict):
                 return rc.get("rc", 0) == 1
-            return str(body.get("meta", {}).get("code", "")) == "200"
+            meta_code = str(body.get("meta", {}).get("code", ""))
+            return meta_code == "200"
+        except HikConnectAuthError:
+            raise
         except Exception as err:
-            _LOGGER.debug("_call_operation cmdId=%d failed: %s", cmd_id, err)
+            _LOGGER.warning("_call_operation cmdId=%d failed: %s", cmd_id, err)
             return False
 
     # ------------------------------------------------------------------

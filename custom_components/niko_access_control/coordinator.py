@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Any, TypeVar
 
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+_T = TypeVar("_T")
 
 from .api import CallingInfo, DeviceInfo, HikConnectAPI, HikConnectAuthError, HikConnectError, LocalISAPIClient
 from .const import CONF_DEVICE_SERIAL, DEFAULT_SCAN_INTERVAL, DOMAIN, HISTORY_SLOTS
@@ -50,6 +54,27 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
             name=DOMAIN,
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
+
+    async def async_api_call(
+        self, coro_factory: Callable[[], Coroutine[Any, Any, _T]]
+    ) -> _T:
+        """Run coro_factory(), retrying once after session refresh / re-login."""
+        try:
+            return await coro_factory()
+        except HikConnectAuthError:
+            pass
+        try:
+            await self.api.refresh_session()
+            return await coro_factory()
+        except HikConnectAuthError:
+            pass
+        if self._username and self._password:
+            try:
+                await self.api.login(self._username, self._password)
+                return await coro_factory()
+            except HikConnectAuthError as err:
+                raise HomeAssistantError(f"Re-login failed: {err}") from err
+        raise HomeAssistantError("Session expired and no stored credentials for re-login")
 
     async def _async_update_data(self) -> CoordinatorData:
         try:

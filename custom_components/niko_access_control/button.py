@@ -4,6 +4,7 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -50,7 +51,13 @@ class NikoAnswerButton(_NikoCallButton):
         self._attr_unique_id = f"{serial}_btn_answer"
 
     async def async_press(self) -> None:
-        await self._coordinator.api.answer_call(self._serial)
+        ok = await self._coordinator.async_api_call(
+            lambda: self._coordinator.api.answer_call(self._serial)
+        )
+        if not ok:
+            raise HomeAssistantError(
+                f"Answer call failed for {self._serial} — is the doorbell ringing?"
+            )
 
 
 class NikoRejectButton(_NikoCallButton):
@@ -62,7 +69,11 @@ class NikoRejectButton(_NikoCallButton):
         self._attr_unique_id = f"{serial}_btn_reject"
 
     async def async_press(self) -> None:
-        await self._coordinator.api.reject_call(self._serial)
+        ok = await self._coordinator.async_api_call(
+            lambda: self._coordinator.api.reject_call(self._serial)
+        )
+        if not ok:
+            raise HomeAssistantError(f"Reject call failed for {self._serial}")
 
 
 class NikoHangupButton(_NikoCallButton):
@@ -74,4 +85,8 @@ class NikoHangupButton(_NikoCallButton):
         self._attr_unique_id = f"{serial}_btn_hangup"
 
     async def async_press(self) -> None:
-        await self._coordinator.api.hangup_call(self._serial)
+        ok = await self._coordinator.async_api_call(
+            lambda: self._coordinator.api.hangup_call(self._serial)
+        )
+        if not ok:
+            raise HomeAssistantError(f"Hang up failed for {self._serial}")
