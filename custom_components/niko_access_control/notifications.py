@@ -8,11 +8,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 from urllib.parse import quote
 
-from homeassistant.components.http.auth import async_sign_path
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -41,7 +40,6 @@ _LOGGER = logging.getLogger(__name__)
 # How long to wait for the call (and its snapshot) to reach the cloud history
 # after a ring detected from the live call state.
 _PICTURE_WAIT = 120
-_SNAPSHOT_LINK_VALID = timedelta(days=1)
 
 
 def mobile_devices(hass: HomeAssistant) -> list[str]:
@@ -187,10 +185,10 @@ class NikoNotifier:
             data["priority"] = "high"  # Android
             data["ttl"] = 0
         if call is not None and call.pic_url:
-            path = f"/api/{DOMAIN}/snapshot/{self.entry.entry_id}/{call.calling_id}"
-            data["image"] = async_sign_path(
-                self.hass, path, _SNAPSHOT_LINK_VALID, use_content_user=True
-            )
+            # Relative link without a query string: the Companion apps prepend
+            # the server URL and add their own authentication. (iOS escapes a
+            # "?" in relative links, so a signed ?authSig= link would 404.)
+            data["image"] = f"/api/{DOMAIN}/snapshot/{self.entry.entry_id}/{call.calling_id}.jpg"
         return {
             "title": options.get(CONF_NOTIFY_TITLE) or DEFAULT_NOTIFY_TITLE,
             "message": message,

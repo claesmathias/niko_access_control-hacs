@@ -196,6 +196,9 @@ class NikoSnapshotView(HomeAssistantView):
         self.hass = hass
 
     async def get(self, request: web.Request, entry_id: str, calling_id: str) -> web.Response:
+        # Accept "<id>.jpg" (notification links) and an escaped query string
+        # that some clients append to the path ("<id>.jpg?x=…" → "%3F").
+        calling_id = calling_id.split("?", 1)[0].removesuffix(".jpg")
         try:
             coordinator = _coordinator(self.hass, entry_id)
         except Unresolvable as err:
