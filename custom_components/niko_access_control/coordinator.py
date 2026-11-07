@@ -53,6 +53,7 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
         self._password = password
         self.local_client = local_client
         self.ring_coordinator: NikoCallStatusCoordinator | None = None
+        self.notifier = None  # NikoNotifier, set in __init__.async_setup_entry
         self._cloud_device: dict[str, Any] | None = None
         self._details_fetched = 0.0
         self._device_info: DeviceInfo | None = None

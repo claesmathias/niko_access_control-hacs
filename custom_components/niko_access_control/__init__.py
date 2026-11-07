@@ -24,11 +24,14 @@ from .const import (
     CONF_LOCAL_HOST,
     CONF_LOCAL_PASSWORD,
     CONF_LOCAL_USERNAME,
+    CONF_NOTIFY_MODE,
     DOMAIN,
     FALLBACK_SCAN_INTERVAL,
+    NOTIFY_MODE_OFF,
 )
 from .coordinator import NikoCallStatusCoordinator, NikoCoordinator
 from .media_source import NikoSnapshotView
+from .notifications import NikoNotifier
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -208,11 +211,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     _remove_obsolete_entities(hass, entry, serial, ring_coordinator.supported)
+    if entry.options.get(CONF_NOTIFY_MODE, NOTIFY_MODE_OFF) == NOTIFY_MODE_OFF:
+        _remove_entity(hass, "button", f"{serial}_btn_test_notification")
     _sync_device(hass, entry, coordinator)
     entry.async_on_unload(
         coordinator.async_add_listener(lambda: _sync_device(hass, entry, coordinator))
     )
     entry.async_on_unload(entry.add_update_listener(_async_reload_on_options))
+    coordinator.notifier = NikoNotifier(hass, entry, coordinator)
+    entry.async_on_unload(coordinator.notifier.async_start())
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -221,6 +228,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_reload_on_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Apply Options changes (local device access) without a restart."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+@callback
+def _remove_entity(hass: HomeAssistant, domain: str, unique_id: str) -> None:
+    registry = er.async_get(hass)
+    if entity_id := registry.async_get_entity_id(domain, DOMAIN, unique_id):
+        registry.async_remove(entity_id)
 
 
 @callback

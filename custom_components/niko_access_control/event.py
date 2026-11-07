@@ -7,10 +7,12 @@ from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
-from .const import CALL_STATE_RINGING, CONF_DEVICE_SERIAL, DOMAIN
+from .api import CallingInfo
+from .const import CALL_STATE_RINGING, CONF_DEVICE_SERIAL, DOMAIN, SIGNAL_RING
 from .coordinator import NikoCoordinator
 from .entity import device_info
 
@@ -28,7 +30,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: NikoCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([NikoDoorbellEvent(coordinator, entry.data[CONF_DEVICE_SERIAL])])
+    async_add_entities([NikoDoorbellEvent(coordinator, entry.data[CONF_DEVICE_SERIAL], entry.entry_id)])
 
 
 class NikoDoorbellEvent(EventEntity):
@@ -45,7 +47,8 @@ class NikoDoorbellEvent(EventEntity):
     _attr_event_types = [EVENT_RING]
     _attr_should_poll = False
 
-    def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
+    def __init__(self, coordinator: NikoCoordinator, serial: str, entry_id: str) -> None:
+        self._entry_id = entry_id
         self._coordinator = coordinator
         self._ring = coordinator.ring_coordinator
         self._attr_unique_id = f"{serial}_doorbell"
@@ -65,10 +68,13 @@ class NikoDoorbellEvent(EventEntity):
         self.async_on_remove(self._coordinator.async_add_listener(self._on_history))
 
     @callback
-    def _fire(self, **attrs) -> None:
+    def _fire(self, call: CallingInfo | None = None) -> None:
         self._last_fired = time.monotonic()
-        self._trigger_event(EVENT_RING, attrs or None)
+        attrs = {"calling_id": call.calling_id, "status": call.status_label} if call else None
+        self._trigger_event(EVENT_RING, attrs)
         self.async_write_ha_state()
+        # Notifications (notifications.py) listen for this.
+        async_dispatcher_send(self.hass, SIGNAL_RING.format(entry_id=self._entry_id), call)
 
     @callback
     def _on_call_state(self) -> None:
@@ -91,4 +97,4 @@ class NikoDoorbellEvent(EventEntity):
             return
         self._last_call_id = last.calling_id
         if time.monotonic() - self._last_fired > _DEDUP_SECONDS:
-            self._fire(calling_id=last.calling_id, status=last.status_label)
+            self._fire(last)

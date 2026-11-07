@@ -40,3 +40,18 @@ CALLER_INFO_STATUS_MAP = {"idle": CALL_STATE_IDLE, "ring": CALL_STATE_RINGING, "
 CALLING_STATUS_ANSWERED = 1
 CALLING_STATUS_MISSED = 2  # observed in real API responses
 CALL_RESULTS = ["answered", "missed"]
+
+# Notifications (options)
+CONF_NOTIFY_MODE = "notify_mode"
+CONF_NOTIFY_DEVICES = "notify_devices"
+CONF_NOTIFY_TITLE = "notify_title"
+CONF_NOTIFY_MESSAGE = "notify_message"
+CONF_NOTIFY_TIME_SENSITIVE = "notify_time_sensitive"
+NOTIFY_MODE_OFF = "off"
+NOTIFY_MODE_ALL = "all"
+NOTIFY_MODE_SELECTED = "selected"
+DEFAULT_NOTIFY_TITLE = "Doorbell"
+DEFAULT_NOTIFY_MESSAGE = "Someone rang at {time} on {date}"
+
+# Dispatcher signal sent by the doorbell event entity on each ring
+SIGNAL_RING = "niko_access_control_ring_{entry_id}"

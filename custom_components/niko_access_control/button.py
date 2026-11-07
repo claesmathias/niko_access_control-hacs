@@ -1,4 +1,4 @@
-"""Button platform for Niko Access Control — call control."""
+"""Button platform for Niko Access Control — call control and test notification."""
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
@@ -7,7 +7,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CALL_STATE_ON_CALL, CALL_STATE_RINGING, CONF_DEVICE_SERIAL, DOMAIN
+from homeassistant.const import EntityCategory
+
+from .const import (
+    CALL_STATE_ON_CALL,
+    CALL_STATE_RINGING,
+    CONF_DEVICE_SERIAL,
+    CONF_NOTIFY_MODE,
+    DOMAIN,
+    NOTIFY_MODE_OFF,
+)
 from .coordinator import NikoCallStatusCoordinator, NikoCoordinator
 from .entity import NikoEntity
 
@@ -19,12 +28,16 @@ async def async_setup_entry(
 ) -> None:
     coordinator: NikoCoordinator = hass.data[DOMAIN][entry.entry_id]
     serial = entry.data[CONF_DEVICE_SERIAL]
+    entities: list[ButtonEntity] = []
+    if entry.options.get(CONF_NOTIFY_MODE, NOTIFY_MODE_OFF) != NOTIFY_MODE_OFF:
+        entities.append(NikoTestNotificationButton(coordinator, serial))
     if not coordinator.ring_coordinator.supported:
         # Devices without live call state (e.g. 510-31001) also refuse call
         # control: the cloud answers "device not online" (2003) and the ISAPI
         # callSignal relay returns -1. Don't offer buttons that can't work.
+        async_add_entities(entities)
         return
-    async_add_entities([
+    async_add_entities(entities + [
         _NikoCallButton(coordinator, serial, "answer_call", "btn_answer",
                         "answer_call", {CALL_STATE_RINGING}),
         _NikoCallButton(coordinator, serial, "reject_call", "btn_reject",
@@ -73,3 +86,21 @@ class _NikoCallButton(NikoEntity, ButtonEntity):
                 f"{self.name} failed for {self._serial} — the call may already have ended"
             )
         await self.coordinator.async_request_refresh()
+
+
+class NikoTestNotificationButton(NikoEntity, ButtonEntity):
+    """Sends the last call as a notification to the configured devices."""
+
+    coordinator: NikoCoordinator
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
+        super().__init__(coordinator, serial, "test_notification")
+        self._attr_unique_id = f"{serial}_btn_test_notification"
+
+    async def async_press(self) -> None:
+        sent, failed = await self.coordinator.notifier.async_send_test()
+        if not sent:
+            raise HomeAssistantError("No mobile devices to notify — check the notification settings")
+        if failed:
+            raise HomeAssistantError(f"Test notification failed for: {', '.join(failed)}")

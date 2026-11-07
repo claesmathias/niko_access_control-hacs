@@ -44,6 +44,17 @@ Media → Niko Access Control → Front door
 
 Pictures are fetched from the cloud when opened and cached in memory; nothing is stored on disk.
 
+### Notifications
+
+Enable under **Settings → Devices & services → Niko Access Control → Configure → Notifications**. On each ring, a push notification is sent to Home Assistant Companion app devices — all of them, or the ones you select — with:
+
+- the time of the ring and the snapshot of that call
+- a configurable title and message (`{time}` and `{date}` placeholders), e.g. *“Er werd gebeld om {time}”*
+- optional time-sensitive delivery (breaks through Focus on iPhone, high priority on Android)
+- tapping opens the call history in the Media panel
+
+To try it, choose **Send test notification** in the same Configure menu, or press the **Test notification** button on the device page (shown while notifications are on). It sends the last call right away. No notify group or automation is needed.
+
 ### Actions
 
 `niko_access_control.answer_call`, `reject_call`, `hangup_call` and `announce` (speech through the doorbell speaker; needs local access in the integration options). Pick the doorbell with the device selector; with a single doorbell it can be left empty. The old `device_serial` field still works.

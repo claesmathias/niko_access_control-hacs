@@ -12,6 +12,7 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -22,7 +23,24 @@ from homeassistant.helpers.selector import (
 )
 
 from .api import HikConnectAPI, HikConnectAuthError, HikConnectError, LocalISAPIClient
-from .const import CONF_DEVICE_SERIAL, CONF_LOCAL_HOST, CONF_LOCAL_PASSWORD, CONF_LOCAL_USERNAME, DOMAIN
+from .const import (
+    CONF_DEVICE_SERIAL,
+    CONF_LOCAL_HOST,
+    CONF_LOCAL_PASSWORD,
+    CONF_LOCAL_USERNAME,
+    CONF_NOTIFY_DEVICES,
+    CONF_NOTIFY_MESSAGE,
+    CONF_NOTIFY_MODE,
+    CONF_NOTIFY_TIME_SENSITIVE,
+    CONF_NOTIFY_TITLE,
+    DEFAULT_NOTIFY_MESSAGE,
+    DEFAULT_NOTIFY_TITLE,
+    DOMAIN,
+    NOTIFY_MODE_ALL,
+    NOTIFY_MODE_OFF,
+    NOTIFY_MODE_SELECTED,
+)
+from .notifications import NikoNotifier, destinations, mobile_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -244,12 +262,113 @@ class NikoAccessControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class NikoOptionsFlowHandler(config_entries.OptionsFlow):
-    """Options flow: configure local device access for two-way audio."""
+    """Options: local device access (two-way audio) and ring notifications."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._entry = config_entry
 
     async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        return self.async_show_menu(
+            step_id="init", menu_options=["notifications", "test_notification", "local"]
+        )
+
+    async def async_step_test_notification(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Send a test notification right away with the saved settings."""
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id)
+        if coordinator is None or coordinator.notifier is None:
+            return self.async_abort(reason="not_loaded")
+        if self._entry.options.get(CONF_NOTIFY_MODE, NOTIFY_MODE_OFF) == NOTIFY_MODE_OFF:
+            return self.async_abort(reason="notifications_off")
+        sent, failed = await coordinator.notifier.async_send_test()
+        if not sent:
+            return self.async_abort(reason="no_mobile_devices")
+        if failed:
+            return self.async_abort(
+                reason="test_failed", description_placeholders={"failed": ", ".join(failed)}
+            )
+        return self.async_abort(reason="test_sent", description_placeholders={"count": str(sent)})
+
+    def _save(self, changes: dict[str, Any]) -> config_entries.FlowResult:
+        """Merge one page's settings into the existing options."""
+        return self.async_create_entry(title="", data={**self._entry.options, **changes})
+
+    # ── notifications ────────────────────────────────────────────────────────
+
+    async def async_step_notifications(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        errors: dict[str, str] = {}
+        current = self._entry.options
+
+        if user_input is not None:
+            changes = {
+                CONF_NOTIFY_MODE: user_input.get(CONF_NOTIFY_MODE, NOTIFY_MODE_OFF),
+                CONF_NOTIFY_DEVICES: user_input.get(CONF_NOTIFY_DEVICES, []),
+                CONF_NOTIFY_TITLE: (user_input.get(CONF_NOTIFY_TITLE) or "").strip() or DEFAULT_NOTIFY_TITLE,
+                CONF_NOTIFY_MESSAGE: (user_input.get(CONF_NOTIFY_MESSAGE) or "").strip() or DEFAULT_NOTIFY_MESSAGE,
+                CONF_NOTIFY_TIME_SENSITIVE: user_input.get(CONF_NOTIFY_TIME_SENSITIVE, True),
+            }
+            options = {**current, **changes}
+            if changes[CONF_NOTIFY_MODE] == NOTIFY_MODE_SELECTED and not changes[CONF_NOTIFY_DEVICES]:
+                errors["base"] = "no_devices_selected"
+            elif changes[CONF_NOTIFY_MODE] != NOTIFY_MODE_OFF and not destinations(self.hass, options):
+                errors["base"] = "no_mobile_devices"
+            else:
+                try:
+                    changes[CONF_NOTIFY_MESSAGE].format(time="", date="")
+                except (KeyError, IndexError, ValueError):
+                    errors[CONF_NOTIFY_MESSAGE] = "invalid_message"
+            if not errors:
+                return self._save(changes)
+
+        available = mobile_devices(self.hass)
+        selected = current.get(CONF_NOTIFY_DEVICES, [])
+        device_options = [
+            SelectOptionDict(
+                value=service,
+                label=service.removeprefix("notify.mobile_app_").replace("_", " ").title(),
+            )
+            for service in sorted({*available, *selected})
+        ]
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_NOTIFY_MODE): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[NOTIFY_MODE_OFF, NOTIFY_MODE_ALL, NOTIFY_MODE_SELECTED],
+                        mode=SelectSelectorMode.LIST,
+                        translation_key="notify_mode",
+                    )
+                ),
+                vol.Optional(CONF_NOTIFY_DEVICES): SelectSelector(
+                    SelectSelectorConfig(options=device_options, multiple=True)
+                ),
+                vol.Optional(CONF_NOTIFY_TITLE): _TEXT,
+                vol.Optional(CONF_NOTIFY_MESSAGE): _TEXT,
+                vol.Optional(CONF_NOTIFY_TIME_SENSITIVE): BooleanSelector(),
+            }
+        )
+        suggested = user_input or {
+            CONF_NOTIFY_MODE: current.get(CONF_NOTIFY_MODE, NOTIFY_MODE_OFF),
+            CONF_NOTIFY_DEVICES: selected,
+            CONF_NOTIFY_TITLE: current.get(CONF_NOTIFY_TITLE, DEFAULT_NOTIFY_TITLE),
+            CONF_NOTIFY_MESSAGE: current.get(CONF_NOTIFY_MESSAGE, DEFAULT_NOTIFY_MESSAGE),
+            CONF_NOTIFY_TIME_SENSITIVE: current.get(CONF_NOTIFY_TIME_SENSITIVE, True),
+        }
+        return self.async_show_form(
+            step_id="notifications",
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
+            # {time}/{date} appear literally in the help texts
+            description_placeholders={"count": str(len(available)), "time": "{time}", "date": "{date}"},
+            errors=errors,
+        )
+
+    # ── local device access (two-way audio) ─────────────────────────────────
+
+    async def async_step_local(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         errors: dict[str, str] = {}
@@ -271,13 +390,12 @@ class NikoOptionsFlowHandler(config_entries.OptionsFlow):
                 errors["base"] = "incomplete_local"
 
             if not errors:
-                return self.async_create_entry(
-                    title="",
-                    data={
+                return self._save(
+                    {
                         CONF_LOCAL_HOST: host,
                         CONF_LOCAL_USERNAME: username,
                         CONF_LOCAL_PASSWORD: password,
-                    },
+                    }
                 )
 
         schema = vol.Schema(
@@ -293,7 +411,7 @@ class NikoOptionsFlowHandler(config_entries.OptionsFlow):
             CONF_LOCAL_PASSWORD: current.get(CONF_LOCAL_PASSWORD, ""),
         }
         return self.async_show_form(
-            step_id="init",
+            step_id="local",
             data_schema=self.add_suggested_values_to_schema(schema, suggested),
             errors=errors,
         )

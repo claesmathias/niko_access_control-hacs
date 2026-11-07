@@ -26,7 +26,7 @@
           "device_serial": "Device serial number"
         },
         "data_description": {
-          "device_serial": "In the Niko Access Control app: Menu → Info → System information → Product number (for example F41404037)."
+          "device_serial": "In the Niko Access Control app: Menu → Info → System information → Product number."
         }
       },
       "reauth_confirm": {
@@ -62,6 +62,30 @@
   "options": {
     "step": {
       "init": {
+        "title": "Doorbell settings",
+        "menu_options": {
+          "notifications": "Notifications",
+          "test_notification": "Send test notification",
+          "local": "Local device access (two-way audio)"
+        }
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Send a push notification with the snapshot to Home Assistant Companion app devices each time someone rings. {count} mobile devices found. Tapping the notification opens the call history. After saving, use “Send test notification” in this menu or the Test notification button on the device page.",
+        "data": {
+          "notify_mode": "Send to",
+          "notify_devices": "Devices",
+          "notify_title": "Title",
+          "notify_message": "Message",
+          "notify_time_sensitive": "Time-sensitive"
+        },
+        "data_description": {
+          "notify_devices": "Only used with “Selected mobile devices”.",
+          "notify_message": "Use {time} for the time of the ring and {date} for the date. Both follow the language and country in Settings → System → General.",
+          "notify_time_sensitive": "Break through Focus / Do Not Disturb on iPhone and use high priority on Android."
+        }
+      },
+      "local": {
         "title": "Local device access (two-way audio)",
         "description": "Optional. Needed for the Announce action, which plays speech through the doorbell speaker over your local network. Leave the IP address and password empty to disable.",
         "data": {
@@ -77,7 +101,17 @@
     },
     "error": {
       "cannot_connect_local": "Could not connect to the doorbell at the given IP. Check the IP address and credentials.",
-      "incomplete_local": "Fill in the IP address, username and password, or clear the IP address and password to disable local access."
+      "incomplete_local": "Fill in the IP address, username and password, or clear the IP address and password to disable local access.",
+      "no_devices_selected": "Select at least one device, or choose “All mobile devices”.",
+      "no_mobile_devices": "No Home Assistant Companion app devices found. Install the app on a phone and sign in first.",
+      "invalid_message": "The message contains an unknown placeholder. Use {time} and {date} only."
+    },
+    "abort": {
+      "test_sent": "Test notification sent to {count} device(s), using the last call.",
+      "test_failed": "The test notification could not be sent to: {failed}. Check the logs.",
+      "notifications_off": "Notifications are off. Turn them on under Notifications first.",
+      "no_mobile_devices": "No Home Assistant Companion app devices to notify. Check the notification settings.",
+      "not_loaded": "The integration is not loaded. Try again in a moment."
     }
   },
   "entity": {
@@ -98,6 +132,9 @@
       },
       "hang_up": {
         "name": "Hang up"
+      },
+      "test_notification": {
+        "name": "Test notification"
       }
     },
     "event": {
@@ -156,7 +193,7 @@
         },
         "device_serial": {
           "name": "Device serial",
-          "description": "Alternative to Doorbell: the serial number, for example F41404037."
+          "description": "Alternative to Doorbell: the serial number shown in the Niko Access Control app."
         }
       }
     },
@@ -170,7 +207,7 @@
         },
         "device_serial": {
           "name": "Device serial",
-          "description": "Alternative to Doorbell: the serial number, for example F41404037."
+          "description": "Alternative to Doorbell: the serial number shown in the Niko Access Control app."
         }
       }
     },
@@ -184,7 +221,7 @@
         },
         "device_serial": {
           "name": "Device serial",
-          "description": "Alternative to Doorbell: the serial number, for example F41404037."
+          "description": "Alternative to Doorbell: the serial number shown in the Niko Access Control app."
         }
       }
     },
@@ -198,7 +235,7 @@
         },
         "device_serial": {
           "name": "Device serial",
-          "description": "Alternative to Doorbell: the serial number, for example F41404037."
+          "description": "Alternative to Doorbell: the serial number shown in the Niko Access Control app."
         },
         "message": {
           "name": "Message",
@@ -216,6 +253,15 @@
           "name": "Answer first",
           "description": "Answer the ringing call before playing the audio."
         }
+      }
+    }
+  },
+  "selector": {
+    "notify_mode": {
+      "options": {
+        "off": "Off",
+        "all": "All mobile devices",
+        "selected": "Selected mobile devices"
       }
     }
   }
