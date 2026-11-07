@@ -8,12 +8,11 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_DEVICE_SERIAL, DOMAIN
+from .const import CALL_STATE_RINGING, CONF_DEVICE_SERIAL, DOMAIN
 from .coordinator import NikoCallStatusCoordinator, NikoCoordinator
+from .entity import NikoEntity
 
 
 async def async_setup_entry(
@@ -23,65 +22,39 @@ async def async_setup_entry(
 ) -> None:
     coordinator: NikoCoordinator = hass.data[DOMAIN][entry.entry_id]
     serial = entry.data[CONF_DEVICE_SERIAL]
-    async_add_entities([
-        NikoOnlineSensor(coordinator, serial),
-        NikoRingingSensor(coordinator.ring_coordinator, serial),
-    ])
+    entities: list[BinarySensorEntity] = [NikoOnlineSensor(coordinator, serial)]
+    if coordinator.ring_coordinator.supported:
+        entities.append(NikoRingingSensor(coordinator.ring_coordinator, serial))
+    async_add_entities(entities)
 
 
-class NikoOnlineSensor(CoordinatorEntity[NikoCoordinator], BinarySensorEntity):
-    """Reports whether the doorbell is reachable via HikConnect."""
+class NikoOnlineSensor(NikoEntity, BinarySensorEntity):
+    """Whether the doorbell is online in the HikConnect cloud."""
 
-    _attr_has_entity_name = True
-    _attr_name = "Online"
+    coordinator: NikoCoordinator
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_icon = "mdi:cloud-check"
 
     def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
-        super().__init__(coordinator)
-        self._serial = serial
+        super().__init__(coordinator, serial, "online")
         self._attr_unique_id = f"{serial}_online"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, serial)},
-            name=f"Niko Doorbell {serial}",
-            manufacturer="Niko / Hikvision",
-            model="Access Control Doorbell",
-        )
 
     @property
     def is_on(self) -> bool | None:
         data = self.coordinator.data
-        if data is None:
-            return None
-        # If we got any calls back the cloud is reachable; online field adds ISAPI reachability
-        if data.online is not None:
-            return data.online
-        return len(data.calls) > 0
+        return data.online if data else None
 
 
-class NikoRingingSensor(CoordinatorEntity[NikoCallStatusCoordinator], BinarySensorEntity):
-    """True while someone is pressing the doorbell button (callStatus == 1)."""
+class NikoRingingSensor(NikoEntity, BinarySensorEntity):
+    """On while the doorbell is ringing (not yet answered or rejected)."""
 
-    _attr_has_entity_name = True
-    _attr_name = "Ringing"
-    _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
-    _attr_icon = "mdi:doorbell"
+    coordinator: NikoCallStatusCoordinator
 
     def __init__(self, coordinator: NikoCallStatusCoordinator, serial: str) -> None:
-        super().__init__(coordinator)
-        self._serial = serial
+        super().__init__(coordinator, serial, "ringing")
         self._attr_unique_id = f"{serial}_ringing"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, serial)},
-            name=f"Niko Doorbell {serial}",
-            manufacturer="Niko / Hikvision",
-            model="Access Control Doorbell",
-        )
 
     @property
     def is_on(self) -> bool | None:
-        status = self.coordinator.data
-        if status is None:
-            return None
-        return status.get("callStatus") == 1
+        state = self.coordinator.call_state
+        return None if state is None else state == CALL_STATE_RINGING

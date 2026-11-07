@@ -14,18 +14,39 @@ Integrate your **Niko Access Control** video doorbell into Home Assistant via th
 
 | Entity | Type | Description |
 |--------|------|-------------|
-| Last Call Time | Sensor (timestamp) | Date & time of the most recent doorbell ring, with full call history in attributes |
-| Last Call Status | Sensor | `answered` or `missed` for the last ring |
-| Total Calls | Sensor | Count of calls in the recent history (last 10) |
-| Last Call Snapshot | Image | JPEG snapshot captured at the last doorbell ring |
-| Online | Binary sensor | Whether the doorbell is reachable via the HikConnect cloud |
-| Firmware Version | Sensor (diagnostic) | Device firmware version |
-| Hardware Version | Sensor (diagnostic) | Device hardware revision |
-| Model | Sensor (diagnostic) | Device model identifier |
-| Serial Number | Sensor (diagnostic) | Physical device serial number |
-| MAC Address | Sensor (diagnostic) | Device MAC address |
-| IP Address | Sensor (diagnostic) | Local device IP address |
-| Device Name | Sensor (diagnostic) | Configured device name |
+| Doorbell | Event (doorbell) | Fires `ring` when someone presses the button — use this to trigger automations (shows *Unknown* until the first ring) |
+| Ringing ¹ | Binary sensor | On while the doorbell is ringing |
+| Call state ¹ | Sensor (enum) | `Idle`, `Ringing` or `On call` |
+| Answer call / Reject call ¹ | Button | Available while the doorbell is ringing |
+| Hang up ¹ | Button | Available while a call is in progress |
+| Last call | Image | Snapshot captured at the last ring |
+| Last call time | Sensor (timestamp) | Time of the most recent ring, with the call history in attributes |
+| Last call status | Sensor (enum) | `Answered` or `Missed` |
+| Calls today | Sensor | Rings since midnight, with `answered` / `missed` counts in attributes |
+| Online | Binary sensor (diagnostic) | Whether the doorbell is online in the HikConnect cloud |
+| IP address | Sensor (diagnostic) | Local IP address of the doorbell |
+
+¹ Only on doorbells that report a live call state. The Niko 510-31001 outdoor unit doesn't: the cloud answers "device not online" for its call status and call control, so these entities aren't created and rings are detected from the call history (checked every 10 s) instead. If local access is configured in the integration options, the doorbell's local call status is tried first.
+
+Model, firmware, hardware version, serial number and MAC address are shown on the device page.
+
+### Call history in the Media panel
+
+Snapshots of all calls in the cloud history (the last 50) can be browsed under **Media → Niko Access Control**, grouped by day:
+
+```
+Media → Niko Access Control → Front door
+   ├── Today · 3 calls, 1 missed
+   │    ├── 14:32:05 · Missed
+   │    └── 09:15:40 · Answered
+   └── Yesterday · 1 call
+```
+
+Pictures are fetched from the cloud when opened and cached in memory; nothing is stored on disk.
+
+### Actions
+
+`niko_access_control.answer_call`, `reject_call`, `hangup_call` and `announce` (speech through the doorbell speaker; needs local access in the integration options). Pick the doorbell with the device selector; with a single doorbell it can be left empty. The old `device_serial` field still works.
 
 ---
 
@@ -41,7 +62,6 @@ Any Niko Access Control doorbell that is registered with a HikConnect / Niko Sma
 
 - A **Niko Smart Home** account (created in the Niko Access Control app)
 - The doorbell already added and working in the Niko Access Control app
-- Your **device serial number** (visible in the app under Menu → Info → System Information → Product number)
 
 ---
 
@@ -65,88 +85,51 @@ Any Niko Access Control doorbell that is registered with a HikConnect / Niko Sma
 
 ## Configuration
 
-1. Go to **Settings → Integrations → Add Integration**
+1. Go to **Settings → Devices & services → Add integration**
 2. Search for **Niko Access Control**
-3. Fill in:
-   - **Username** — your Niko Smart Home account email or phone number
-   - **Password** — your account password
-   - **Device Serial Number** — found in the Niko app (e.g. `F41404037`)
+3. Sign in with your Niko Access Control app account (email or phone number and password)
+4. Pick your doorbell from the list of devices on your account
 
-The integration will start polling every 30 seconds.
-
----
-
-## Entities in detail
-
-### Last Call Time (`sensor.last_call_time`)
-
-Shows the timestamp of the most recent doorbell ring as a `datetime` sensor.
-
-**Extra state attributes** include the full call history (last 10 calls):
-```yaml
-call_history:
-  - calling_id: "1779652122"
-    time: "2026-05-24 19:48:42"
-    status: "answered"
-    pic_url: "https://..."
-  - calling_id: "1779459938"
-    time: "2026-05-22 14:25:38"
-    status: "missed"
-    pic_url: "https://..."
-```
-
-### Last Call Snapshot (`image.last_call_snapshot`)
-
-Displays the JPEG image captured by the doorbell at the time of the last ring. The image is downloaded from the HikConnect cloud and cached until a new call comes in.
-
-### Online (`binary_sensor.online`)
-
-Reports `on` when the HikConnect cloud can reach the device.
+If the device list can't be loaded, you're asked for the serial number instead (Niko app: Menu → Info → System information → Product number).
 
 ---
 
 ## Automation examples
 
-### Notify on doorbell ring
+### Notify with a picture when someone rings
 
 ```yaml
 automation:
   - alias: "Doorbell notification"
-    trigger:
-      - platform: state
-        entity_id: sensor.niko_doorbell_f41404037_last_call_time
-    action:
-      - service: notify.mobile_app
+    triggers:
+      - trigger: state
+        entity_id: event.front_door_doorbell
+    actions:
+      - delay: 10  # give the cloud time to store the snapshot
+      - action: notify.mobile_app
         data:
           title: "Someone at the door"
-          message: "{{ states('sensor.niko_doorbell_f41404037_last_call_status') | capitalize }} call at {{ states('sensor.niko_doorbell_f41404037_last_call_time') }}"
-```
-
-### Show doorbell picture in notification
-
-```yaml
-automation:
-  - alias: "Doorbell picture notification"
-    trigger:
-      - platform: state
-        entity_id: sensor.niko_doorbell_f41404037_last_call_time
-    action:
-      - service: notify.mobile_app
-        data:
-          title: "Doorbell"
-          message: "{{ states('sensor.niko_doorbell_f41404037_last_call_status') | capitalize }}"
+          message: "Doorbell rang at {{ now().strftime('%H:%M') }}"
           data:
-            image: /api/image_proxy/image.niko_doorbell_f41404037_last_call_snapshot
+            image: /api/image_proxy/image.front_door_last_call
 ```
+
+Entity IDs depend on the device name from the Niko app; check them under **Settings → Devices & services → Niko Access Control**.
+
+---
+
+## Upgrading from 2.x
+
+Version 3.0 removes the separate firmware/model/serial/MAC sensors (now on the device page), the `Total calls` sensor (replaced by `Calls today`), and the up-to-50 `Answered`/`Missed` image entities (all call snapshots are now in the Media panel). Automations using those entities need updating. The old entities are removed automatically. Requires Home Assistant 2024.11 or newer.
 
 ---
 
 ## Technical notes
 
-- This integration was reverse-engineered from the **Niko Access Control Android APK v3.0** (released 2025-11-17) using `jadx`.
+- This integration uses the same cloud API as the official **Niko Access Control** app (v3.0).
 - It communicates exclusively with the **HikConnect / GuardingVision cloud API** (`api.guardingvision.com` / `apiieu.hik-connect.com`).
 - All API calls use `clientType: 378` (the Niko OEM app type) and `appId: NIKO`.
-- Passwords are transmitted as lowercase MD5 hashes, matching `MD5Util.f()` in the APK.
+- Passwords are transmitted as lowercase MD5 hashes, as the official app does.
 - Live streaming is **not** supported — it requires the proprietary HikConnect VSDK native library which cannot run in Python.
 
 ---

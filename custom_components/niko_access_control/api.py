@@ -28,6 +28,8 @@ except ImportError:
 from .const import (
     API_BASE_URL,
     APP_CHANNEL,
+    CALL_STATUS_MAP,
+    CALLER_INFO_STATUS_MAP,
     CALLING_LIST_PATH,
     CLIENT_TYPE,
     CLIENT_VERSION,
@@ -383,6 +385,19 @@ class HikConnectAPI:
     # Online / call status
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def parse_call_state(status: dict[str, Any] | None) -> str | None:
+        """Map a call-status response to idle / ringing / on_call (None if unknown)."""
+        if not status:
+            return None
+        caller = status.get("callerInfo")
+        if isinstance(caller, dict) and caller.get("status") in CALLER_INFO_STATUS_MAP:
+            return CALLER_INFO_STATUS_MAP[caller["status"]]
+        local = status.get("CallStatus")  # local ISAPI: {"CallStatus": {"status": "ring"}}
+        if isinstance(local, dict) and local.get("status") in CALLER_INFO_STATUS_MAP:
+            return CALLER_INFO_STATUS_MAP[local["status"]]
+        return CALL_STATUS_MAP.get(status.get("callStatus"))
+
     async def get_call_status(self, device_serial: str) -> dict[str, Any]:
         """Return parsed call/device status; rc==1 means device is online."""
         import json as _json
@@ -399,6 +414,22 @@ class HikConnectAPI:
         except Exception as err:
             _LOGGER.debug("get_call_status failed: %s", err)
         return {}
+
+    # ------------------------------------------------------------------
+    # Account device list (name / model / firmware / online as shown in the app)
+    # ------------------------------------------------------------------
+
+    async def get_user_devices(self) -> list[dict[str, Any]]:
+        """GET v3/userdevices/v1/devices/pagelist → deviceInfos[] (same call the official app uses)."""
+        resp = await self._get(
+            "/v3/userdevices/v1/devices/pagelist",
+            params={"groupId": -1, "limit": 50, "offset": 0, "filter": ""},
+        )
+        meta_code = str(resp.get("meta", {}).get("code", resp.get("code", "")))
+        if meta_code != "200":
+            raise HikConnectError(f"Device list failed (code={meta_code})")
+        devices = resp.get("deviceInfos") or []
+        return devices if isinstance(devices, list) else []
 
     # ------------------------------------------------------------------
     # Pictures
@@ -504,6 +535,19 @@ class LocalISAPIClient:
         except Exception as err:
             _LOGGER.debug("LocalISAPI test_connection failed: %s", err)
             return False
+
+    async def get_call_status(self) -> dict[str, Any] | None:
+        """GET /ISAPI/VideoIntercom/callStatus → {"CallStatus": {"status": "idle|ring|onCall"}}."""
+        try:
+            async with self._client() as c:
+                resp = await c.get(f"{self._base}/ISAPI/VideoIntercom/callStatus?format=json", timeout=4.0)
+                if resp.status_code != 200:
+                    _LOGGER.debug("Local callStatus → HTTP %d", resp.status_code)
+                    return None
+                return resp.json()
+        except Exception as err:
+            _LOGGER.debug("Local callStatus failed: %s", err)
+            return None
 
     async def speak(self, pcm_mulaw_bytes: bytes) -> bool:
         """Open the two-way audio channel, stream PCM µ-law data, then close."""

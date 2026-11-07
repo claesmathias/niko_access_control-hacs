@@ -3,37 +3,220 @@
     "step": {
       "user": {
         "title": "Connect to HikConnect",
-        "description": "Enter your HikConnect (Niko Smart Home) account credentials and the serial number of your access control doorbell.",
+        "description": "Sign in with the account you use in the Niko Access Control app.",
         "data": {
-          "username": "Username (email or phone)",
-          "password": "Password",
-          "device_serial": "Device Serial Number"
+          "username": "Email or phone number",
+          "password": "Password"
+        },
+        "data_description": {
+          "username": "The account you use in the Niko Access Control app."
+        }
+      },
+      "device": {
+        "title": "Choose your doorbell",
+        "description": "These doorbells are linked to your account.",
+        "data": {
+          "device_serial": "Doorbell"
+        }
+      },
+      "manual": {
+        "title": "Enter the serial number",
+        "description": "The doorbell list could not be loaded from your account. Enter the serial number instead.",
+        "data": {
+          "device_serial": "Device serial number"
+        },
+        "data_description": {
+          "device_serial": "In the Niko Access Control app: Menu → Info → System information → Product number (for example F41404037)."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "description": "The stored password for doorbell {serial} no longer works. Enter your current Niko Access Control account details.",
+        "data": {
+          "username": "Email or phone number",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Change account",
+        "description": "Update the Niko Access Control account used for doorbell {serial}.",
+        "data": {
+          "username": "Email or phone number",
+          "password": "Password"
         }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to HikConnect. Check your internet connection.",
       "invalid_auth": "Invalid credentials. Check your username and password.",
+      "device_not_found": "This serial number is not linked to the account. Check the product number in the Niko Access Control app.",
       "unknown": "Unexpected error. Check the logs."
     },
     "abort": {
-      "already_configured": "This device is already configured."
+      "already_configured": "This doorbell is already configured.",
+      "reauth_successful": "Signed in again successfully.",
+      "reconfigure_successful": "Account updated successfully.",
+      "no_new_devices": "All doorbells on this account are already set up."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Local device access (two-way audio)",
-        "description": "Enter the local IP address and credentials of your doorbell to enable the announce service (TTS through the doorbell speaker). Leave empty to disable.",
+        "description": "Optional. Needed for the Announce action, which plays speech through the doorbell speaker over your local network. Leave the IP address and password empty to disable.",
         "data": {
-          "local_host": "Doorbell local IP or hostname",
-          "local_username": "Local device username",
-          "local_password": "Local device password"
+          "local_host": "Doorbell IP address or hostname",
+          "local_username": "Device username",
+          "local_password": "Device password"
+        },
+        "data_description": {
+          "local_host": "The doorbell's address on your network, for example 192.168.1.50.",
+          "local_username": "The local admin account of the doorbell (usually admin)."
         }
       }
     },
     "error": {
-      "cannot_connect_local": "Could not connect to the doorbell at the given IP. Check the IP address and credentials."
+      "cannot_connect_local": "Could not connect to the doorbell at the given IP. Check the IP address and credentials.",
+      "incomplete_local": "Fill in the IP address, username and password, or clear the IP address and password to disable local access."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "online": {
+        "name": "Online"
+      },
+      "ringing": {
+        "name": "Ringing"
+      }
+    },
+    "button": {
+      "answer_call": {
+        "name": "Answer call"
+      },
+      "reject_call": {
+        "name": "Reject call"
+      },
+      "hang_up": {
+        "name": "Hang up"
+      }
+    },
+    "event": {
+      "doorbell": {
+        "name": "Doorbell",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "ring": "Ring"
+            }
+          }
+        }
+      }
+    },
+    "image": {
+      "last_call": {
+        "name": "Last call"
+      }
+    },
+    "sensor": {
+      "last_call_time": {
+        "name": "Last call time"
+      },
+      "last_call_status": {
+        "name": "Last call status",
+        "state": {
+          "answered": "Answered",
+          "missed": "Missed"
+        }
+      },
+      "calls_today": {
+        "name": "Calls today",
+        "unit_of_measurement": "calls"
+      },
+      "call_state": {
+        "name": "Call state",
+        "state": {
+          "idle": "Idle",
+          "ringing": "Ringing",
+          "on_call": "On call"
+        }
+      },
+      "ip_address": {
+        "name": "IP address"
+      }
+    }
+  },
+  "services": {
+    "answer_call": {
+      "name": "Answer call",
+      "description": "Answers a ringing doorbell call.",
+      "fields": {
+        "device_id": {
+          "name": "Doorbell",
+          "description": "The doorbell to use. Can be left empty when only one is configured."
+        },
+        "device_serial": {
+          "name": "Device serial",
+          "description": "Alternative to Doorbell: the serial number, for example F41404037."
+        }
+      }
+    },
+    "reject_call": {
+      "name": "Reject call",
+      "description": "Declines a ringing doorbell call without answering it.",
+      "fields": {
+        "device_id": {
+          "name": "Doorbell",
+          "description": "The doorbell to use. Can be left empty when only one is configured."
+        },
+        "device_serial": {
+          "name": "Device serial",
+          "description": "Alternative to Doorbell: the serial number, for example F41404037."
+        }
+      }
+    },
+    "hangup_call": {
+      "name": "Hang up",
+      "description": "Ends a doorbell call that has already been answered.",
+      "fields": {
+        "device_id": {
+          "name": "Doorbell",
+          "description": "The doorbell to use. Can be left empty when only one is configured."
+        },
+        "device_serial": {
+          "name": "Device serial",
+          "description": "Alternative to Doorbell: the serial number, for example F41404037."
+        }
+      }
+    },
+    "announce": {
+      "name": "Announce",
+      "description": "Plays a spoken message or audio file through the doorbell speaker. Requires local device access (integration options).",
+      "fields": {
+        "device_id": {
+          "name": "Doorbell",
+          "description": "The doorbell to use. Can be left empty when only one is configured."
+        },
+        "device_serial": {
+          "name": "Device serial",
+          "description": "Alternative to Doorbell: the serial number, for example F41404037."
+        },
+        "message": {
+          "name": "Message",
+          "description": "Text to speak with the default text-to-speech engine. Use this or Media URL."
+        },
+        "media_url": {
+          "name": "Media URL",
+          "description": "URL of an audio file to play instead of a spoken message."
+        },
+        "language": {
+          "name": "Language",
+          "description": "Language for the spoken message."
+        },
+        "answer_first": {
+          "name": "Answer first",
+          "description": "Answer the ringing call before playing the audio."
+        }
+      }
     }
   }
 }

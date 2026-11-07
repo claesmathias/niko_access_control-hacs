@@ -5,11 +5,11 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_DEVICE_SERIAL, DOMAIN
-from .coordinator import NikoCoordinator
+from .const import CALL_STATE_ON_CALL, CALL_STATE_RINGING, CONF_DEVICE_SERIAL, DOMAIN
+from .coordinator import NikoCallStatusCoordinator, NikoCoordinator
+from .entity import NikoEntity
 
 
 async def async_setup_entry(
@@ -19,74 +19,57 @@ async def async_setup_entry(
 ) -> None:
     coordinator: NikoCoordinator = hass.data[DOMAIN][entry.entry_id]
     serial = entry.data[CONF_DEVICE_SERIAL]
+    if not coordinator.ring_coordinator.supported:
+        # Devices without live call state (e.g. 510-31001) also refuse call
+        # control: the cloud answers "device not online" (2003) and the ISAPI
+        # callSignal relay returns -1. Don't offer buttons that can't work.
+        return
     async_add_entities([
-        NikoAnswerButton(coordinator, serial),
-        NikoRejectButton(coordinator, serial),
-        NikoHangupButton(coordinator, serial),
+        _NikoCallButton(coordinator, serial, "answer_call", "btn_answer",
+                        "answer_call", {CALL_STATE_RINGING}),
+        _NikoCallButton(coordinator, serial, "reject_call", "btn_reject",
+                        "reject_call", {CALL_STATE_RINGING}),
+        _NikoCallButton(coordinator, serial, "hang_up", "btn_hangup",
+                        "hangup_call", {CALL_STATE_ON_CALL}),
     ])
 
 
-class _NikoCallButton(ButtonEntity):
-    """Base class for doorbell call-control buttons."""
+class _NikoCallButton(NikoEntity, ButtonEntity):
+    """Call-control button, available only in the call states where it applies.
 
-    _attr_has_entity_name = True
+    Follows the 5 s live call-state poll. If the state is unknown (status
+    endpoint not answering), the button stays available so it can still be tried.
+    """
 
-    def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
-        self._coordinator = coordinator
-        self._serial = serial
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, serial)},
-            name=f"Niko Doorbell {serial}",
-            manufacturer="Niko / Hikvision",
-            model="Access Control Doorbell",
-        )
+    coordinator: NikoCallStatusCoordinator
 
+    def __init__(
+        self,
+        coordinator: NikoCoordinator,
+        serial: str,
+        key: str,
+        uid_suffix: str,
+        api_method: str,
+        active_states: set[str],
+    ) -> None:
+        super().__init__(coordinator.ring_coordinator, serial, key)
+        self._main = coordinator
+        self._api_method = api_method
+        self._active_states = active_states
+        self._attr_unique_id = f"{serial}_{uid_suffix}"
 
-class NikoAnswerButton(_NikoCallButton):
-    _attr_name = "Answer call"
-    _attr_icon = "mdi:phone-in-talk"
-
-    def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
-        super().__init__(coordinator, serial)
-        self._attr_unique_id = f"{serial}_btn_answer"
+    @property
+    def available(self) -> bool:
+        if not self.coordinator.last_update_success:
+            return True  # live state unknown — let the user try
+        state = self.coordinator.call_state
+        return state is None or state in self._active_states
 
     async def async_press(self) -> None:
-        ok = await self._coordinator.async_api_call(
-            lambda: self._coordinator.api.answer_call(self._serial)
-        )
+        method = getattr(self._main.api, self._api_method)
+        ok = await self._main.async_api_call(lambda: method(self._serial))
         if not ok:
             raise HomeAssistantError(
-                f"Answer call failed for {self._serial} — is the doorbell ringing?"
+                f"{self.name} failed for {self._serial} — the call may already have ended"
             )
-
-
-class NikoRejectButton(_NikoCallButton):
-    _attr_name = "Reject call"
-    _attr_icon = "mdi:phone-hangup"
-
-    def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
-        super().__init__(coordinator, serial)
-        self._attr_unique_id = f"{serial}_btn_reject"
-
-    async def async_press(self) -> None:
-        ok = await self._coordinator.async_api_call(
-            lambda: self._coordinator.api.reject_call(self._serial)
-        )
-        if not ok:
-            raise HomeAssistantError(f"Reject call failed for {self._serial}")
-
-
-class NikoHangupButton(_NikoCallButton):
-    _attr_name = "Hang up"
-    _attr_icon = "mdi:phone-off"
-
-    def __init__(self, coordinator: NikoCoordinator, serial: str) -> None:
-        super().__init__(coordinator, serial)
-        self._attr_unique_id = f"{serial}_btn_hangup"
-
-    async def async_press(self) -> None:
-        ok = await self._coordinator.async_api_call(
-            lambda: self._coordinator.api.hangup_call(self._serial)
-        )
-        if not ok:
-            raise HomeAssistantError(f"Hang up failed for {self._serial}")
+        await self.coordinator.async_request_refresh()

@@ -298,14 +298,14 @@ async def integration_test() -> None:
         print(f"\n{SEP}\nANSWER CALL (cmdId=2 / ISAPI callSignal)\n{SEP}")
 
         # Answer immediately if a call is already ringing, otherwise poll for up to 60s.
-        call_detected = status.get("callStatus") == 1
+        call_detected = status.get("callStatus") == 2  # 1=idle, 2=ring, 3=onCall
         if call_detected:
             print("  Active call already detected — answering immediately…")
         else:
             print("  ⚠️  Please press the doorbell now. Waiting up to 60 seconds…")
             for remaining in range(60, 0, -1):
                 status = await api.get_call_status(DEVICE_SERIAL)
-                if status.get("callStatus") == 1:
+                if status.get("callStatus") == 2:
                     print(f"\n  Incoming call detected! Answering now…")
                     call_detected = True
                     break

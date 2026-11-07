@@ -1,71 +1,52 @@
 answer_call:
-  name: Answer call
-  description: Answer an incoming doorbell call via the HikConnect cloud API.
-  fields:
+  fields: &call_fields
+    device_id:
+      required: false
+      selector:
+        device:
+          integration: niko_access_control
     device_serial:
-      name: Device serial
-      description: Serial number of the doorbell (e.g. F41404037).
-      required: true
+      required: false
+      advanced: true
       selector:
         text:
 
 reject_call:
-  name: Reject call
-  description: Reject an incoming doorbell call (equivalent to pressing "decline").
-  fields:
-    device_serial:
-      name: Device serial
-      description: Serial number of the doorbell.
-      required: true
-      selector:
-        text:
+  fields: *call_fields
 
 hangup_call:
-  name: Hang up call
-  description: Hang up an active doorbell call.
-  fields:
-    device_serial:
-      name: Device serial
-      description: Serial number of the doorbell.
-      required: true
-      selector:
-        text:
+  fields: *call_fields
 
 announce:
-  name: Announce
-  description: >
-    Answer an incoming doorbell call and play a TTS message through the
-    doorbell speaker via the local ISAPI two-way audio channel.
-    Requires the local IP and credentials to be configured in Options.
   fields:
+    device_id:
+      required: false
+      selector:
+        device:
+          integration: niko_access_control
     device_serial:
-      name: Device serial
-      description: Serial number of the doorbell.
-      required: true
+      required: false
+      advanced: true
       selector:
         text:
     message:
-      name: Message
-      description: Text to speak (uses the default HA TTS engine). Either this or media_url is required.
       required: false
+      example: "We'll be right there!"
       selector:
         text:
+          multiline: true
     media_url:
-      name: Media URL
-      description: URL of an audio file to play instead of generating TTS.
       required: false
+      example: "http://homeassistant.local:8123/local/doorbell.mp3"
       selector:
         text:
+          type: url
     language:
-      name: Language
-      description: BCP-47 language code for TTS (e.g. en, nl, fr).
       required: false
       default: "en"
       selector:
-        text:
+        language:
     answer_first:
-      name: Answer first
-      description: Answer the call via cloud API before streaming audio.
       required: false
       default: true
       selector:

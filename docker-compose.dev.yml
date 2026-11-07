@@ -1,0 +1,16 @@
+# Local Home Assistant for testing this integration.
+#   docker compose -f docker-compose.dev.yml up -d      → http://localhost:8123
+#   docker compose -f docker-compose.dev.yml restart    → pick up code changes
+#   docker compose -f docker-compose.dev.yml logs -f
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: ha-niko-dev
+    ports:
+      - "8123:8123"
+    environment:
+      - TZ=Europe/Brussels
+    volumes:
+      - ./.ha-dev/config:/config
+      - ./custom_components/niko_access_control:/config/custom_components/niko_access_control:ro
+    restart: unless-stopped

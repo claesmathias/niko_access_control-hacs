@@ -1,11 +1,11 @@
 {
   "domain": "niko_access_control",
   "name": "Niko Access Control",
-  "version": "2.3.1",
+  "version": "3.0.0",
   "documentation": "https://github.com/claesmathias/niko-access-control-hacs",
   "issue_tracker": "https://github.com/claesmathias/niko-access-control-hacs/issues",
   "requirements": ["aiohttp>=3.9.0"],
-  "dependencies": [],
+  "dependencies": ["http", "media_source"],
   "codeowners": ["@claesmathias"],
   "iot_class": "cloud_polling",
   "config_flow": true,

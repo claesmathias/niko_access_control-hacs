@@ -1,0 +1,41 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "ringing": {
+        "default": "mdi:bell-outline",
+        "state": { "on": "mdi:bell-ring" }
+      }
+    },
+    "button": {
+      "answer_call": { "default": "mdi:phone-in-talk" },
+      "reject_call": { "default": "mdi:phone-hangup" },
+      "hang_up": { "default": "mdi:phone-off" }
+    },
+    "event": {
+      "doorbell": { "default": "mdi:doorbell" }
+    },
+    "image": {
+      "last_call": { "default": "mdi:doorbell-video" }
+    },
+    "sensor": {
+      "last_call_time": { "default": "mdi:doorbell" },
+      "last_call_status": {
+        "default": "mdi:phone",
+        "state": {
+          "answered": "mdi:phone-check",
+          "missed": "mdi:phone-missed"
+        }
+      },
+      "calls_today": { "default": "mdi:counter" },
+      "call_state": {
+        "default": "mdi:phone",
+        "state": {
+          "idle": "mdi:phone-outline",
+          "ringing": "mdi:phone-ring",
+          "on_call": "mdi:phone-in-talk"
+        }
+      },
+      "ip_address": { "default": "mdi:ip-network" }
+    }
+  }
+}
