@@ -23,6 +23,7 @@ Integrate your **Niko Access Control** video doorbell into Home Assistant via th
 | Last call time | Sensor (timestamp) | Time of the most recent ring, with the call history in attributes |
 | Last call status | Sensor (enum) | `Answered` or `Missed` |
 | Calls today | Sensor | Rings since midnight, with `answered` / `missed` counts in attributes |
+| Test notification | Button (configuration) | Sends the last call as a notification — shown while notifications are on |
 | Online | Binary sensor (diagnostic) | Whether the doorbell is online in the HikConnect cloud |
 | IP address | Sensor (diagnostic) | Local IP address of the doorbell |
 
@@ -49,11 +50,13 @@ Pictures are fetched from the cloud when opened and cached in memory; nothing is
 Enable under **Settings → Devices & services → Niko Access Control → Configure → Notifications**. On each ring, a push notification is sent to Home Assistant Companion app devices — all of them, or the ones you select — with:
 
 - the time of the ring and the snapshot of that call
-- a configurable title and message (`{time}` and `{date}` placeholders), e.g. *“Er werd gebeld om {time}”*
+- a configurable title and message with `{time}` and `{date}` placeholders, formatted for the language and country in **Settings → System → General** (e.g. *14:32* and *7 nov 2026*). Default: *“Someone rang at {time} on {date}”*
 - optional time-sensitive delivery (breaks through Focus on iPhone, high priority on Android)
 - tapping opens the call history in the Media panel
 
 To try it, choose **Send test notification** in the same Configure menu, or press the **Test notification** button on the device page (shown while notifications are on). It sends the last call right away. No notify group or automation is needed.
+
+To do something else when someone rings (turn on a light, play a chime), use the **Doorbell** event as the trigger of an automation: *When → Event → Event received → Doorbell, event type Ring*.
 
 ### Actions
 
@@ -102,30 +105,6 @@ Any Niko Access Control doorbell that is registered with a HikConnect / Niko Sma
 4. Pick your doorbell from the list of devices on your account
 
 If the device list can't be loaded, you're asked for the serial number instead (Niko app: Menu → Info → System information → Product number).
-
----
-
-## Automation examples
-
-### Notify with a picture when someone rings
-
-```yaml
-automation:
-  - alias: "Doorbell notification"
-    triggers:
-      - trigger: state
-        entity_id: event.front_door_doorbell
-    actions:
-      - delay: 10  # give the cloud time to store the snapshot
-      - action: notify.mobile_app
-        data:
-          title: "Someone at the door"
-          message: "Doorbell rang at {{ now().strftime('%H:%M') }}"
-          data:
-            image: /api/image_proxy/image.front_door_last_call
-```
-
-Entity IDs depend on the device name from the Niko app; check them under **Settings → Devices & services → Niko Access Control**.
 
 ---
 
