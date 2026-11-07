@@ -1,13 +1,20 @@
 {
   "domain": "niko_access_control",
   "name": "Niko Access Control",
-  "version": "3.1.1",
-  "documentation": "https://github.com/claesmathias/niko-access-control-hacs",
-  "issue_tracker": "https://github.com/claesmathias/niko-access-control-hacs/issues",
-  "requirements": ["aiohttp>=3.9.0", "babel>=2.12.0"],
-  "dependencies": ["http", "media_source"],
-  "codeowners": ["@claesmathias"],
-  "iot_class": "cloud_polling",
+  "codeowners": [
+    "@claesmathias"
+  ],
   "config_flow": true,
-  "integration_type": "device"
+  "dependencies": [
+    "http",
+    "media_source"
+  ],
+  "documentation": "https://github.com/claesmathias/niko-access-control-hacs",
+  "integration_type": "device",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/claesmathias/niko-access-control-hacs/issues",
+  "requirements": [
+    "babel>=2.12.0"
+  ],
+  "version": "3.1.1"
 }
