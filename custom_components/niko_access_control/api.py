@@ -1,24 +1,14 @@
 """HikConnect API client for Niko Access Control."""
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import io
 import logging
 import uuid
-import wave
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 import aiohttp
-import httpx
-
-try:
-    import audioop as _audioop
-    _AUDIOOP_OK = True
-except ImportError:
-    _AUDIOOP_OK = False  # Python 3.13+
 
 from .const import (
     API_BASE_URL,
@@ -405,9 +395,6 @@ class HikConnectAPI:
         caller = status.get("callerInfo")
         if isinstance(caller, dict) and caller.get("status") in CALLER_INFO_STATUS_MAP:
             return CALLER_INFO_STATUS_MAP[caller["status"]]
-        local = status.get("CallStatus")  # local ISAPI: {"CallStatus": {"status": "ring"}}
-        if isinstance(local, dict) and local.get("status") in CALLER_INFO_STATUS_MAP:
-            return CALLER_INFO_STATUS_MAP[local["status"]]
         return CALL_STATUS_MAP.get(status.get("callStatus"))
 
     async def get_call_status(self, device_serial: str) -> dict[str, Any]:
@@ -509,149 +496,3 @@ class HikConnectAPI:
         if authenticated and meta_code in _SESSION_ERROR_CODES:
             raise HikConnectAuthError(f"Session rejected (code={meta_code})")
         return body
-
-
-# ---------------------------------------------------------------------------
-# Local ISAPI two-way audio (direct LAN access, Digest Auth)
-# ---------------------------------------------------------------------------
-
-class LocalISAPIClient:
-    """Streams audio to the doorbell via the local ISAPI HTTP interface.
-
-    Uses HTTP Digest Auth over Home Assistant's shared httpx client (pass it
-    from ``homeassistant.helpers.httpx_client.get_async_client``). The audio must
-    be G.711 µ-law encoded at 8 kHz mono — use ``audio_to_mulaw`` to convert.
-    """
-
-    _CHANNEL = 1
-
-    def __init__(self, client: httpx.AsyncClient, host: str, username: str, password: str) -> None:
-        self._client = client
-        self._base = f"http://{host}"
-        self._username = username
-        self._password = password
-
-    async def _request(self, method: str, path: str, *, timeout: float = 15.0, **kwargs: Any) -> httpx.Response:
-        # A fresh DigestAuth per request: it keeps nonce state, and call-status
-        # polling can run concurrently with an announce on the shared client.
-        return await self._client.request(
-            method,
-            self._base + path,
-            auth=httpx.DigestAuth(self._username, self._password),
-            timeout=timeout,
-            **kwargs,
-        )
-
-    async def test_connection(self) -> bool:
-        """Return True if the device is reachable and credentials are valid."""
-        try:
-            resp = await self._request("GET", "/ISAPI/System/deviceInfo")
-            return resp.status_code == 200
-        except Exception as err:
-            _LOGGER.debug("LocalISAPI test_connection failed: %s", err)
-            return False
-
-    async def get_call_status(self) -> dict[str, Any] | None:
-        """GET /ISAPI/VideoIntercom/callStatus → {"CallStatus": {"status": "idle|ring|onCall"}}."""
-        try:
-            resp = await self._request(
-                "GET", "/ISAPI/VideoIntercom/callStatus", params={"format": "json"}, timeout=4.0
-            )
-            if resp.status_code != 200:
-                _LOGGER.debug("Local callStatus → HTTP %d", resp.status_code)
-                return None
-            return resp.json()
-        except Exception as err:
-            _LOGGER.debug("Local callStatus failed: %s", err)
-            return None
-
-    async def speak(self, pcm_mulaw_bytes: bytes) -> bool:
-        """Open the two-way audio channel, stream PCM µ-law data, then close."""
-        if not await self._open():
-            return False
-        ok = await self._send(pcm_mulaw_bytes)
-        await self._close()
-        return ok
-
-    async def _open(self) -> bool:
-        path = f"/ISAPI/System/twoWayAudio/channels/{self._CHANNEL}/open"
-        try:
-            resp = await self._request(
-                "PUT", path,
-                headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
-                content=b"",
-            )
-            _LOGGER.debug("twoWayAudio open → %d", resp.status_code)
-            return resp.status_code in (200, 201)
-        except Exception as err:
-            _LOGGER.debug("twoWayAudio open failed: %s", err)
-            return False
-
-    async def _send(self, data: bytes) -> bool:
-        path = f"/ISAPI/System/twoWayAudio/channels/{self._CHANNEL}/audioData"
-        try:
-            resp = await self._request(
-                "PUT", path,
-                content=data,
-                headers={"Content-Type": "application/octet-stream"},
-                timeout=30.0,
-            )
-            _LOGGER.debug("twoWayAudio send %d bytes → %d", len(data), resp.status_code)
-            return resp.status_code in (200, 201, 204)
-        except Exception as err:
-            _LOGGER.debug("twoWayAudio send failed: %s", err)
-            return False
-
-    async def _close(self) -> None:
-        path = f"/ISAPI/System/twoWayAudio/channels/{self._CHANNEL}/close"
-        try:
-            await self._request("PUT", path, content=b"")
-        except Exception as err:
-            _LOGGER.debug("twoWayAudio close failed: %s", err)
-
-
-# ---------------------------------------------------------------------------
-# Audio conversion helpers (WAV/MP3 → G.711 µ-law 8 kHz mono)
-# ---------------------------------------------------------------------------
-
-def wav_to_mulaw(wav_bytes: bytes) -> bytes:
-    """Convert WAV bytes to raw G.711 µ-law 8 kHz mono using stdlib audioop."""
-    if not _AUDIOOP_OK:
-        raise RuntimeError("audioop not available; use audio_to_mulaw with ffmpeg instead")
-    with wave.open(io.BytesIO(wav_bytes)) as wf:
-        channels = wf.getnchannels()
-        sample_width = wf.getsampwidth()
-        framerate = wf.getframerate()
-        pcm = wf.readframes(wf.getnframes())
-    if channels == 2:
-        pcm = _audioop.tomono(pcm, sample_width, 0.5, 0.5)
-    if sample_width != 2:
-        pcm = _audioop.lin2lin(pcm, sample_width, 2)
-        sample_width = 2
-    if framerate != 8000:
-        pcm, _ = _audioop.ratecv(pcm, sample_width, 1, framerate, 8000, None)
-    return _audioop.lin2ulaw(pcm, 2)
-
-
-async def audio_to_mulaw(audio_bytes: bytes, mime_type: str) -> bytes:
-    """Convert arbitrary audio (WAV or MP3) to G.711 µ-law 8 kHz mono.
-
-    Uses audioop for WAV; falls back to an ffmpeg subprocess for other formats.
-    """
-    is_wav = "wav" in mime_type or audio_bytes[:4] == b"RIFF"
-    if is_wav and _AUDIOOP_OK:
-        return wav_to_mulaw(audio_bytes)
-
-    # ffmpeg fallback (handles MP3, OGG, etc.)
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-i", "pipe:0",
-        "-ar", "8000", "-ac", "1",
-        "-acodec", "pcm_mulaw", "-f", "mulaw", "pipe:1",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    stdout, _ = await proc.communicate(audio_bytes)
-    if not stdout:
-        raise RuntimeError("ffmpeg produced no audio output — is ffmpeg installed?")
-    return stdout

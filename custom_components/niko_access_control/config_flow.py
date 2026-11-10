@@ -11,7 +11,6 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import (
     BooleanSelector,
     SelectOptionDict,
@@ -23,12 +22,9 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .api import HikConnectAPI, HikConnectAuthError, HikConnectError, LocalISAPIClient
+from .api import HikConnectAPI, HikConnectAuthError, HikConnectError
 from .const import (
     CONF_DEVICE_SERIAL,
-    CONF_LOCAL_HOST,
-    CONF_LOCAL_PASSWORD,
-    CONF_LOCAL_USERNAME,
     CONF_NOTIFY_DEVICES,
     CONF_NOTIFY_MESSAGE,
     CONF_NOTIFY_MODE,
@@ -263,7 +259,7 @@ class NikoAccessControlConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class NikoOptionsFlowHandler(config_entries.OptionsFlow):
-    """Options: local device access (two-way audio) and ring notifications."""
+    """Options: ring notifications."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._entry = config_entry
@@ -272,7 +268,7 @@ class NikoOptionsFlowHandler(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         return self.async_show_menu(
-            step_id="init", menu_options=["notifications", "test_notification", "local"]
+            step_id="init", menu_options=["notifications", "test_notification"]
         )
 
     async def async_step_test_notification(
@@ -364,55 +360,5 @@ class NikoOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=self.add_suggested_values_to_schema(schema, suggested),
             # {time}/{date} appear literally in the help texts
             description_placeholders={"count": str(len(available)), "time": "{time}", "date": "{date}"},
-            errors=errors,
-        )
-
-    # ── local device access (two-way audio) ─────────────────────────────────
-
-    async def async_step_local(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        errors: dict[str, str] = {}
-        current = self._entry.options
-
-        if user_input is not None:
-            host = user_input.get(CONF_LOCAL_HOST, "").strip()
-            username = user_input.get(CONF_LOCAL_USERNAME, "").strip()
-            password = user_input.get(CONF_LOCAL_PASSWORD, "")
-
-            if host and username and password:
-                try:
-                    client = LocalISAPIClient(get_async_client(self.hass), host, username, password)
-                    if not await client.test_connection():
-                        errors["base"] = "cannot_connect_local"
-                except Exception:  # noqa: BLE001
-                    errors["base"] = "cannot_connect_local"
-            elif host or password:
-                errors["base"] = "incomplete_local"
-
-            if not errors:
-                return self._save(
-                    {
-                        CONF_LOCAL_HOST: host,
-                        CONF_LOCAL_USERNAME: username,
-                        CONF_LOCAL_PASSWORD: password,
-                    }
-                )
-
-        schema = vol.Schema(
-            {
-                vol.Optional(CONF_LOCAL_HOST): _TEXT,
-                vol.Optional(CONF_LOCAL_USERNAME): _TEXT,
-                vol.Optional(CONF_LOCAL_PASSWORD): _PASSWORD,
-            }
-        )
-        suggested = user_input or {
-            CONF_LOCAL_HOST: current.get(CONF_LOCAL_HOST, ""),
-            CONF_LOCAL_USERNAME: current.get(CONF_LOCAL_USERNAME, "admin"),
-            CONF_LOCAL_PASSWORD: current.get(CONF_LOCAL_PASSWORD, ""),
-        }
-        return self.async_show_form(
-            step_id="local",
-            data_schema=self.add_suggested_values_to_schema(schema, suggested),
             errors=errors,
         )

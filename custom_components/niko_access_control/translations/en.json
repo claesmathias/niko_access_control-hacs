@@ -65,8 +65,7 @@
         "title": "Doorbell settings",
         "menu_options": {
           "notifications": "Notifications",
-          "test_notification": "Send test notification",
-          "local": "Local device access (two-way audio)"
+          "test_notification": "Send test notification"
         }
       },
       "notifications": {
@@ -84,24 +83,9 @@
           "notify_message": "Use {time} for the time of the ring and {date} for the date. Both follow the language and country in Settings → System → General.",
           "notify_time_sensitive": "Break through Focus / Do Not Disturb on iPhone and use high priority on Android."
         }
-      },
-      "local": {
-        "title": "Local device access (two-way audio)",
-        "description": "Optional. Needed for the Announce action, which plays speech through the doorbell speaker over your local network. Leave the IP address and password empty to disable.",
-        "data": {
-          "local_host": "Doorbell IP address or hostname",
-          "local_username": "Device username",
-          "local_password": "Device password"
-        },
-        "data_description": {
-          "local_host": "The doorbell's address on your network, for example 192.168.1.50.",
-          "local_username": "The local admin account of the doorbell (usually admin)."
-        }
       }
     },
     "error": {
-      "cannot_connect_local": "Could not connect to the doorbell at the given IP. Check the IP address and credentials.",
-      "incomplete_local": "Fill in the IP address, username and password, or clear the IP address and password to disable local access.",
       "no_devices_selected": "Select at least one device, or choose “All mobile devices”.",
       "no_mobile_devices": "No Home Assistant Companion app devices found. Install the app on a phone and sign in first.",
       "invalid_message": "The message contains an unknown placeholder. Use {time} and {date} only."
@@ -222,36 +206,6 @@
         "device_serial": {
           "name": "Device serial",
           "description": "Alternative to Doorbell: the serial number shown in the Niko Access Control app."
-        }
-      }
-    },
-    "announce": {
-      "name": "Announce",
-      "description": "Plays a spoken message or audio file through the doorbell speaker. Requires local device access (integration options).",
-      "fields": {
-        "device_id": {
-          "name": "Doorbell",
-          "description": "The doorbell to use. Can be left empty when only one is configured."
-        },
-        "device_serial": {
-          "name": "Device serial",
-          "description": "Alternative to Doorbell: the serial number shown in the Niko Access Control app."
-        },
-        "message": {
-          "name": "Message",
-          "description": "Text to speak with the default text-to-speech engine. Use this or Media URL."
-        },
-        "media_url": {
-          "name": "Media URL",
-          "description": "URL of an audio file to play instead of a spoken message."
-        },
-        "language": {
-          "name": "Language",
-          "description": "Language for the spoken message. Defaults to the language of the default text-to-speech engine."
-        },
-        "answer_first": {
-          "name": "Answer first",
-          "description": "Answer the ringing call before playing the audio."
         }
       }
     }

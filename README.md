@@ -27,7 +27,7 @@ Integrate your **Niko Access Control** video doorbell into Home Assistant via th
 | Online | Binary sensor (diagnostic) | Whether the doorbell is online in the HikConnect cloud |
 | IP address | Sensor (diagnostic) | Local IP address of the doorbell |
 
-¹ Only on doorbells that report a live call state. The Niko 510-31001 outdoor unit doesn't: the cloud answers "device not online" for its call status and call control, so these entities aren't created and rings are detected from the call history (checked every 10 s) instead. If local access is configured in the integration options, the doorbell's local call status is tried first.
+¹ Only on doorbells that report a live call state. The Niko 510-31001 outdoor unit doesn't: the cloud answers "device not online" for its call status and call control, so these entities aren't created and rings are detected from the call history (checked every 10 s) instead.
 
 Model, firmware, hardware version, serial number and MAC address are shown on the device page.
 
@@ -60,7 +60,7 @@ To do something else when someone rings (turn on a light, play a chime), use the
 
 ### Actions
 
-`niko_access_control.answer_call`, `reject_call`, `hangup_call` and `announce` (speech through the doorbell speaker; needs local access in the integration options). Pick the doorbell with the device selector; with a single doorbell it can be left empty. The old `device_serial` field still works.
+`niko_access_control.answer_call`, `reject_call` and `hangup_call`. Pick the doorbell with the device selector; with a single doorbell it can be left empty. The old `device_serial` field still works.
 
 ---
 

@@ -16,37 +16,3 @@ reject_call:
 
 hangup_call:
   fields: *call_fields
-
-announce:
-  fields:
-    device_id:
-      required: false
-      selector:
-        device:
-          integration: niko_access_control
-    device_serial:
-      required: false
-      advanced: true
-      selector:
-        text:
-    message:
-      required: false
-      example: "We'll be right there!"
-      selector:
-        text:
-          multiline: true
-    media_url:
-      required: false
-      example: "http://homeassistant.local:8123/local/doorbell.mp3"
-      selector:
-        text:
-          type: url
-    language:
-      required: false
-      selector:
-        language:
-    answer_first:
-      required: false
-      default: true
-      selector:
-        boolean:

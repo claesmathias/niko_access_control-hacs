@@ -1,12 +1,10 @@
 """Niko Access Control integration."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from datetime import timedelta
 
-import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
@@ -21,21 +19,15 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.typing import ConfigType
 
 from .api import (
     HikConnectAPI,
     HikConnectAuthError,
     HikConnectError,
-    LocalISAPIClient,
-    audio_to_mulaw,
 )
 from .const import (
     CONF_DEVICE_SERIAL,
-    CONF_LOCAL_HOST,
-    CONF_LOCAL_PASSWORD,
-    CONF_LOCAL_USERNAME,
     CONF_NOTIFY_MODE,
     DOMAIN,
     FALLBACK_SCAN_INTERVAL,
@@ -60,7 +52,6 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 SERVICE_ANSWER_CALL = "answer_call"
 SERVICE_REJECT_CALL = "reject_call"
 SERVICE_HANGUP_CALL = "hangup_call"
-SERVICE_ANNOUNCE = "announce"
 
 # device_id (device picker) is preferred; device_serial is kept for existing automations.
 _TARGET = {
@@ -68,15 +59,6 @@ _TARGET = {
     vol.Optional(CONF_DEVICE_SERIAL): cv.string,
 }
 _CALL_SCHEMA = vol.Schema(_TARGET)
-_ANNOUNCE_SCHEMA = vol.Schema(
-    {
-        **_TARGET,
-        vol.Optional("message"): cv.string,
-        vol.Optional("media_url"): cv.string,
-        vol.Optional("language"): cv.string,
-        vol.Optional("answer_first", default=True): cv.boolean,
-    }
-)
 
 # Entities removed in v3.0.0: folded into the device card, replaced by the
 # doorbell event / Calls today, or by the Media panel (all call snapshots).
@@ -84,6 +66,9 @@ _OBSOLETE_UNIQUE_ID = re.compile(
     r"_(info_(?!ip_address$).+|call_history_\d+|history_\d+|call_count|snapshot_camera)$"
 )
 
+
+# Options of the local device access feature, removed in v3.3.0.
+_REMOVED_OPTIONS = ("local_host", "local_username", "local_password")
 
 # Created only when the doorbell reports a live call state (call control needs it too).
 _LIVE_STATE_ENTITIES = (
@@ -120,7 +105,6 @@ def _coordinator_for_call(hass: HomeAssistant, call: ServiceCall) -> NikoCoordin
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the integration's actions and snapshot view once."""
-    session = async_get_clientsession(hass)
     hass.http.register_view(NikoSnapshotView(hass))
 
     def _call_handler(method: str, label: str):
@@ -134,50 +118,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
         return _handler
 
-    async def _announce(call: ServiceCall) -> None:
-        message = call.data.get("message")
-        media_url = call.data.get("media_url")
-        language = call.data.get("language")
-        answer_first = call.data.get("answer_first", True)
-
-        if not message and not media_url:
-            raise HomeAssistantError("Provide either 'message' or 'media_url'")
-
-        coordinator = _coordinator_for_call(hass, call)
-        serial = coordinator.device_serial
-        local_client = coordinator.local_client
-        if not local_client:
-            raise HomeAssistantError(
-                "Local device not configured. Go to Settings → Devices & services → "
-                "Niko Access Control → Configure to add the local IP and credentials."
-            )
-
-        # Prepare the audio before answering, so a failure doesn't leave the
-        # visitor on an answered, silent call.
-        if media_url:
-            try:
-                async with session.get(
-                    media_url, timeout=aiohttp.ClientTimeout(total=30)
-                ) as resp:
-                    resp.raise_for_status()
-                    audio_bytes = await resp.read()
-                    mime_type = resp.content_type or "audio/mpeg"
-            except (aiohttp.ClientError, TimeoutError) as err:
-                raise HomeAssistantError(f"Could not download {media_url}: {err}") from err
-        else:
-            audio_bytes, mime_type = await _tts_audio(hass, message, language)
-        try:
-            pcm_bytes = await audio_to_mulaw(audio_bytes, mime_type)
-        except (RuntimeError, OSError) as err:
-            raise HomeAssistantError(f"Audio conversion failed: {err}") from err
-
-        if answer_first:
-            await coordinator.async_api_call(lambda: coordinator.api.answer_call(serial))
-            await asyncio.sleep(1)
-
-        if not await local_client.speak(pcm_bytes):
-            raise HomeAssistantError("Failed to stream audio to doorbell via ISAPI")
-
     hass.services.async_register(
         DOMAIN, SERVICE_ANSWER_CALL, _call_handler("answer_call", "Answer call"), _CALL_SCHEMA
     )
@@ -187,7 +127,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.services.async_register(
         DOMAIN, SERVICE_HANGUP_CALL, _call_handler("hangup_call", "Hang up"), _CALL_SCHEMA
     )
-    hass.services.async_register(DOMAIN, SERVICE_ANNOUNCE, _announce, _ANNOUNCE_SCHEMA)
     return True
 
 
@@ -201,15 +140,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except HikConnectError as err:
         raise ConfigEntryNotReady(f"Cannot reach the Hik-Connect cloud: {err}") from err
 
-    # Optional local ISAPI client (set via Options flow)
-    local_client: LocalISAPIClient | None = None
-    opts = entry.options
-    if opts.get(CONF_LOCAL_HOST) and opts.get(CONF_LOCAL_USERNAME) and opts.get(CONF_LOCAL_PASSWORD):
-        local_client = LocalISAPIClient(
-            get_async_client(hass),
-            opts[CONF_LOCAL_HOST],
-            opts[CONF_LOCAL_USERNAME],
-            opts[CONF_LOCAL_PASSWORD],
+    # Local device access was removed in v3.3.0: drop its stored credentials.
+    if any(key in entry.options for key in _REMOVED_OPTIONS):
+        hass.config_entries.async_update_entry(
+            entry,
+            options={k: v for k, v in entry.options.items() if k not in _REMOVED_OPTIONS},
         )
 
     serial = entry.data[CONF_DEVICE_SERIAL]
@@ -218,11 +153,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, api, serial,
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
-        local_client=local_client,
     )
     await coordinator.async_config_entry_first_refresh()
 
-    ring_coordinator = NikoCallStatusCoordinator(hass, api, serial, local_client)
+    ring_coordinator = NikoCallStatusCoordinator(hass, api, serial)
     await ring_coordinator.async_refresh()
     coordinator.ring_coordinator = ring_coordinator
     if not ring_coordinator.supported:
@@ -254,7 +188,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_reload_on_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply Options changes (local device access) without a restart."""
+    """Apply Options changes without a restart."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -306,34 +240,6 @@ def _sync_device(hass: HomeAssistant, entry: ConfigEntry, coordinator: NikoCoord
         serial_number=(info.serial_number if info else "") or cloud.get("fullSerial") or serial,
         configuration_url=f"http://{info.ip_address}" if info and info.ip_address else None,
     )
-
-
-async def _tts_audio(
-    hass: HomeAssistant, message: str, language: str | None
-) -> tuple[bytes, str]:
-    """Render a message with Home Assistant's default TTS engine → (audio bytes, format)."""
-    if "tts" not in hass.config.components:
-        raise HomeAssistantError(
-            "Text-to-speech is not set up. Add a TTS integration first "
-            "(e.g. Google Translate text-to-speech or Piper), or use 'media_url'."
-        )
-    # Imported here: tts is an after_dependency, not a hard requirement.
-    from homeassistant.components import tts  # noqa: PLC0415
-    from homeassistant.components.tts.media_source import (  # noqa: PLC0415
-        generate_media_source_id,
-    )
-
-    media_source_id = generate_media_source_id(hass, message, language=language)
-    try:
-        extension, audio_bytes = await tts.async_get_media_source_audio(hass, media_source_id)
-    except HomeAssistantError:
-        raise
-    except Exception as err:  # noqa: BLE001 - engine failures surface as various types
-        raise HomeAssistantError(f"Text-to-speech failed: {err}") from err
-
-    if not audio_bytes:
-        raise HomeAssistantError("Text-to-speech returned no audio")
-    return audio_bytes, f"audio/{extension}"
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

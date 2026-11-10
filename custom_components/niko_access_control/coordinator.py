@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import CallingInfo, DeviceInfo, HikConnectAPI, HikConnectAuthError, HikConnectError, LocalISAPIClient
+from .api import CallingInfo, DeviceInfo, HikConnectAPI, HikConnectAuthError, HikConnectError
 from .const import DEFAULT_SCAN_INTERVAL, DEVICE_LIST_INTERVAL, DOMAIN, HISTORY_SLOTS, LIVE_STATE_INTERVAL
 
 _T = TypeVar("_T")
@@ -45,13 +45,11 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
         device_serial: str,
         username: str = "",
         password: str = "",
-        local_client: LocalISAPIClient | None = None,
     ) -> None:
         self.api = api
         self.device_serial = device_serial
         self._username = username
         self._password = password
-        self.local_client = local_client
         self.ring_coordinator: NikoCallStatusCoordinator | None = None
         self.notifier = None  # NikoNotifier, set in __init__.async_setup_entry
         self._cloud_device: dict[str, Any] | None = None
@@ -178,9 +176,8 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
 class NikoCallStatusCoordinator(DataUpdateCoordinator[dict]):
     """Fast-polling coordinator for live call state (5 s interval).
 
-    Sources, in order: the doorbell's local ISAPI (when local access is set up
-    in the options), then the cloud call-status endpoint. Some devices support
-    neither; see `supported`.
+    Source: the cloud call-status endpoint. Some devices don't report a live
+    call state there; see `supported`.
     """
 
     def __init__(
@@ -188,11 +185,9 @@ class NikoCallStatusCoordinator(DataUpdateCoordinator[dict]):
         hass: HomeAssistant,
         api: HikConnectAPI,
         device_serial: str,
-        local_client: LocalISAPIClient | None = None,
     ) -> None:
         self.api = api
         self.device_serial = device_serial
-        self.local_client = local_client
         super().__init__(
             hass,
             _LOGGER,
@@ -211,10 +206,6 @@ class NikoCallStatusCoordinator(DataUpdateCoordinator[dict]):
         return self.call_state is not None
 
     async def _async_update_data(self) -> dict:
-        if self.local_client is not None:
-            status = await self.local_client.get_call_status()
-            if HikConnectAPI.parse_call_state(status) is not None:
-                return status
         try:
             return await self.api.get_call_status(self.device_serial)
         except Exception as err:
