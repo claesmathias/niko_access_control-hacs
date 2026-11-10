@@ -7,23 +7,18 @@ import io
 import logging
 import uuid
 import wave
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import aiohttp
+import httpx
 
 try:
     import audioop as _audioop
     _AUDIOOP_OK = True
 except ImportError:
     _AUDIOOP_OK = False  # Python 3.13+
-
-try:
-    import httpx as _httpx
-    _HTTPX_OK = True
-except ImportError:
-    _HTTPX_OK = False
 
 from .const import (
     API_BASE_URL,
@@ -46,6 +41,16 @@ class HikConnectAuthError(Exception):
 
 class HikConnectError(Exception):
     """Raised on general API errors."""
+
+
+# meta.code values that mean the credentials themselves are wrong (Hik-Connect /
+# EZVIZ platform codes: user not found, wrong password, locked, frozen, bad
+# account or password). Any other failure is treated as transient.
+_CREDENTIAL_ERROR_CODES = {"1013", "1014", "1015", "1016", "1226"}
+# meta.code values that mean the session is no longer valid.
+_SESSION_ERROR_CODES = {"401", "403"}
+# Call history must be queried per message status: unread (0) and read (1).
+_MSG_STATUSES = (0, 1)
 
 
 @dataclass
@@ -165,7 +170,9 @@ class HikConnectAPI:
         meta_code = str(resp.get("meta", {}).get("code", resp.get("code", "")))
         if meta_code != "200":
             msg = resp.get("meta", {}).get("message") or resp.get("msg")
-            raise HikConnectAuthError(f"Login failed (code={meta_code}): {msg}")
+            if meta_code in _CREDENTIAL_ERROR_CODES:
+                raise HikConnectAuthError(f"Login failed (code={meta_code}): {msg}")
+            raise HikConnectError(f"Login failed (code={meta_code}): {msg}")
 
         session_info = resp.get("loginSession", {})
         self._session_id = session_info.get("sessionId")
@@ -213,18 +220,20 @@ class HikConnectAPI:
         path = CALLING_LIST_PATH.format(device_serial=device_serial)
         seen: set[str] = set()
         result: list[CallingInfo] = []
+        errors: list[str] = []
 
-        for msg_status in (0, 1):
+        for msg_status in _MSG_STATUSES:
             try:
                 resp = await self._get(path, params={"msgStatus": msg_status, "pageSize": count})
-            except HikConnectAuthError:
-                raise
-            except Exception as err:
+            except HikConnectError as err:
                 _LOGGER.debug("get_calls msgStatus=%s failed: %s", msg_status, err)
+                errors.append(str(err))
                 continue
 
             meta_code = str(resp.get("meta", {}).get("code", resp.get("code", "")))
             if meta_code != "200":
+                _LOGGER.debug("get_calls msgStatus=%s returned code=%s", msg_status, meta_code)
+                errors.append(f"code={meta_code}")
                 continue
 
             items = resp.get("data", [])
@@ -245,6 +254,9 @@ class HikConnectAPI:
                         pic_url=r.get("picUrl") or None,
                         calling_message=r.get("callingMessage", ""),
                     ))
+
+        if not result and len(errors) == len(_MSG_STATUSES):
+            raise HikConnectError(f"Call history unavailable ({'; '.join(errors)})")
 
         result.sort(key=lambda c: c.calling_time, reverse=True)
         return result
@@ -436,13 +448,16 @@ class HikConnectAPI:
     # ------------------------------------------------------------------
 
     async def get_picture(self, pic_url: str) -> bytes:
-        async with self._session.get(
-            pic_url,
-            headers=self._common_headers(),
-            timeout=aiohttp.ClientTimeout(total=30),
-        ) as resp:
-            resp.raise_for_status()
-            return await resp.read()
+        try:
+            async with self._session.get(
+                pic_url,
+                headers=self._common_headers(),
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                resp.raise_for_status()
+                return await resp.read()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise HikConnectError(f"Snapshot download failed: {str(err) or type(err).__name__}") from err
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -451,53 +466,49 @@ class HikConnectAPI:
     async def _get(
         self, path: str, params: dict | None = None, authenticated: bool = True
     ) -> dict[str, Any]:
-        url = self._base_url + path
-        headers = self._common_headers() if authenticated else self._anon_headers()
-        try:
-            async with self._session.get(
-                url, params=params, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                resp.raise_for_status()
-                return await resp.json(content_type=None)
-        except aiohttp.ClientResponseError as err:
-            if err.status in (401, 403):
-                raise HikConnectAuthError(str(err)) from err
-            raise HikConnectError(str(err)) from err
+        return await self._request("GET", path, params=params, authenticated=authenticated)
 
     async def _post(
         self, path: str, data: dict | None = None, authenticated: bool = True
     ) -> dict[str, Any]:
-        url = self._base_url + path
-        headers = self._common_headers() if authenticated else self._anon_headers()
-        try:
-            async with self._session.post(
-                url, data=data, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                resp.raise_for_status()
-                return await resp.json(content_type=None)
-        except aiohttp.ClientResponseError as err:
-            if err.status in (401, 403):
-                raise HikConnectAuthError(str(err)) from err
-            raise HikConnectError(str(err)) from err
+        return await self._request("POST", path, data=data, authenticated=authenticated)
 
     async def _put(
         self, path: str, data: dict | None = None, authenticated: bool = True
     ) -> dict[str, Any]:
+        return await self._request("PUT", path, data=data, authenticated=authenticated)
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict | None = None,
+        data: dict | None = None,
+        authenticated: bool = True,
+    ) -> dict[str, Any]:
+        """Send a request; map HTTP 401/403 to HikConnectAuthError, anything else to HikConnectError."""
         url = self._base_url + path
         headers = self._common_headers() if authenticated else self._anon_headers()
         try:
-            async with self._session.put(
-                url, data=data, headers=headers,
+            async with self._session.request(
+                method, url, params=params, data=data, headers=headers,
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 resp.raise_for_status()
-                return await resp.json(content_type=None)
+                body = await resp.json(content_type=None)
         except aiohttp.ClientResponseError as err:
             if err.status in (401, 403):
                 raise HikConnectAuthError(str(err)) from err
             raise HikConnectError(str(err)) from err
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            raise HikConnectError(f"{method} {path} failed: {str(err) or type(err).__name__}") from err
+        if not isinstance(body, dict):
+            raise HikConnectError(f"{method} {path}: unexpected response {body!r}")
+        meta_code = str(body.get("meta", {}).get("code", body.get("code", "")))
+        if authenticated and meta_code in _SESSION_ERROR_CODES:
+            raise HikConnectAuthError(f"Session rejected (code={meta_code})")
+        return body
 
 
 # ---------------------------------------------------------------------------
@@ -507,31 +518,35 @@ class HikConnectAPI:
 class LocalISAPIClient:
     """Streams audio to the doorbell via the local ISAPI HTTP interface.
 
-    Uses HTTP Digest Auth (httpx).  The audio must be G.711 µ-law encoded at
-    8 kHz mono — use ``wav_to_mulaw`` / ``audio_to_mulaw`` to convert TTS output.
+    Uses HTTP Digest Auth over Home Assistant's shared httpx client (pass it
+    from ``homeassistant.helpers.httpx_client.get_async_client``). The audio must
+    be G.711 µ-law encoded at 8 kHz mono — use ``audio_to_mulaw`` to convert.
     """
 
     _CHANNEL = 1
 
-    def __init__(self, host: str, username: str, password: str) -> None:
-        if not _HTTPX_OK:
-            raise RuntimeError("httpx is required for local ISAPI access (pip install httpx)")
+    def __init__(self, client: httpx.AsyncClient, host: str, username: str, password: str) -> None:
+        self._client = client
         self._base = f"http://{host}"
         self._username = username
         self._password = password
 
-    def _client(self) -> "_httpx.AsyncClient":
-        return _httpx.AsyncClient(
-            auth=_httpx.DigestAuth(self._username, self._password),
-            timeout=15.0,
+    async def _request(self, method: str, path: str, *, timeout: float = 15.0, **kwargs: Any) -> httpx.Response:
+        # A fresh DigestAuth per request: it keeps nonce state, and call-status
+        # polling can run concurrently with an announce on the shared client.
+        return await self._client.request(
+            method,
+            self._base + path,
+            auth=httpx.DigestAuth(self._username, self._password),
+            timeout=timeout,
+            **kwargs,
         )
 
     async def test_connection(self) -> bool:
         """Return True if the device is reachable and credentials are valid."""
         try:
-            async with self._client() as c:
-                resp = await c.get(f"{self._base}/ISAPI/System/deviceInfo")
-                return resp.status_code == 200
+            resp = await self._request("GET", "/ISAPI/System/deviceInfo")
+            return resp.status_code == 200
         except Exception as err:
             _LOGGER.debug("LocalISAPI test_connection failed: %s", err)
             return False
@@ -539,12 +554,13 @@ class LocalISAPIClient:
     async def get_call_status(self) -> dict[str, Any] | None:
         """GET /ISAPI/VideoIntercom/callStatus → {"CallStatus": {"status": "idle|ring|onCall"}}."""
         try:
-            async with self._client() as c:
-                resp = await c.get(f"{self._base}/ISAPI/VideoIntercom/callStatus?format=json", timeout=4.0)
-                if resp.status_code != 200:
-                    _LOGGER.debug("Local callStatus → HTTP %d", resp.status_code)
-                    return None
-                return resp.json()
+            resp = await self._request(
+                "GET", "/ISAPI/VideoIntercom/callStatus", params={"format": "json"}, timeout=4.0
+            )
+            if resp.status_code != 200:
+                _LOGGER.debug("Local callStatus → HTTP %d", resp.status_code)
+                return None
+            return resp.json()
         except Exception as err:
             _LOGGER.debug("Local callStatus failed: %s", err)
             return None
@@ -560,14 +576,13 @@ class LocalISAPIClient:
     async def _open(self) -> bool:
         path = f"/ISAPI/System/twoWayAudio/channels/{self._CHANNEL}/open"
         try:
-            async with self._client() as c:
-                resp = await c.put(
-                    self._base + path,
-                    headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
-                    content=b"",
-                )
-                _LOGGER.debug("twoWayAudio open → %d", resp.status_code)
-                return resp.status_code in (200, 201)
+            resp = await self._request(
+                "PUT", path,
+                headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
+                content=b"",
+            )
+            _LOGGER.debug("twoWayAudio open → %d", resp.status_code)
+            return resp.status_code in (200, 201)
         except Exception as err:
             _LOGGER.debug("twoWayAudio open failed: %s", err)
             return False
@@ -575,15 +590,14 @@ class LocalISAPIClient:
     async def _send(self, data: bytes) -> bool:
         path = f"/ISAPI/System/twoWayAudio/channels/{self._CHANNEL}/audioData"
         try:
-            async with self._client() as c:
-                resp = await c.put(
-                    self._base + path,
-                    content=data,
-                    headers={"Content-Type": "application/octet-stream"},
-                    timeout=30.0,
-                )
-                _LOGGER.debug("twoWayAudio send %d bytes → %d", len(data), resp.status_code)
-                return resp.status_code in (200, 201, 204)
+            resp = await self._request(
+                "PUT", path,
+                content=data,
+                headers={"Content-Type": "application/octet-stream"},
+                timeout=30.0,
+            )
+            _LOGGER.debug("twoWayAudio send %d bytes → %d", len(data), resp.status_code)
+            return resp.status_code in (200, 201, 204)
         except Exception as err:
             _LOGGER.debug("twoWayAudio send failed: %s", err)
             return False
@@ -591,8 +605,7 @@ class LocalISAPIClient:
     async def _close(self) -> None:
         path = f"/ISAPI/System/twoWayAudio/channels/{self._CHANNEL}/close"
         try:
-            async with self._client() as c:
-                await c.put(self._base + path, content=b"")
+            await self._request("PUT", path, content=b"")
         except Exception as err:
             _LOGGER.debug("twoWayAudio close failed: %s", err)
 

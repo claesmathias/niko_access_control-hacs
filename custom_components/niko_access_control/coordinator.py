@@ -70,6 +70,16 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
     ) -> _T:
         """Run coro_factory(), retrying once after session refresh / re-login."""
         try:
+            return await self._api_call_with_reauth(coro_factory)
+        except HikConnectAuthError as err:
+            raise HomeAssistantError(f"Re-login failed: {err}") from err
+        except HikConnectError as err:
+            raise HomeAssistantError(f"Hik-Connect request failed: {err}") from err
+
+    async def _api_call_with_reauth(
+        self, coro_factory: Callable[[], Coroutine[Any, Any, _T]]
+    ) -> _T:
+        try:
             return await coro_factory()
         except HikConnectAuthError:
             pass
@@ -78,13 +88,10 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
             return await coro_factory()
         except HikConnectAuthError:
             pass
-        if self._username and self._password:
-            try:
-                await self.api.login(self._username, self._password)
-                return await coro_factory()
-            except HikConnectAuthError as err:
-                raise HomeAssistantError(f"Re-login failed: {err}") from err
-        raise HomeAssistantError("Session expired and no stored credentials for re-login")
+        if not (self._username and self._password):
+            raise HikConnectAuthError("Session expired and no stored credentials for re-login")
+        await self.api.login(self._username, self._password)
+        return await coro_factory()
 
     def call_by_id(self, calling_id: str) -> CallingInfo | None:
         calls = self.data.calls if self.data else []
@@ -105,6 +112,12 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
     async def _async_update_data(self) -> CoordinatorData:
         try:
+            return await self._fetch_with_reauth()
+        except HikConnectError as err:
+            raise UpdateFailed(str(err)) from err
+
+    async def _fetch_with_reauth(self) -> CoordinatorData:
+        try:
             return await self._fetch()
         except HikConnectAuthError:
             # 1. Try refreshing the token first
@@ -120,9 +133,7 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
                     return await self._fetch()
                 except HikConnectAuthError as err:
                     raise ConfigEntryAuthFailed(str(err)) from err
-            raise ConfigEntryAuthFailed("Session expired and no credentials stored for re-login")
-        except HikConnectError as err:
-            raise UpdateFailed(str(err)) from err
+            raise ConfigEntryAuthFailed("Session expired and no credentials stored for re-login") from None
 
     async def _fetch(self) -> CoordinatorData:
         calls = await self.api.get_calls(self.device_serial, count=HISTORY_SLOTS)

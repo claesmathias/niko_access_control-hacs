@@ -43,7 +43,6 @@ announce:
           type: url
     language:
       required: false
-      default: "en"
       selector:
         language:
     answer_first:

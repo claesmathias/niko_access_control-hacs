@@ -6,19 +6,31 @@ import logging
 import re
 from datetime import timedelta
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_DEVICE_ID, CONF_PASSWORD, CONF_USERNAME, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    HomeAssistantError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.typing import ConfigType
 
-from .api import HikConnectAPI, LocalISAPIClient, audio_to_mulaw
+from .api import (
+    HikConnectAPI,
+    HikConnectAuthError,
+    HikConnectError,
+    LocalISAPIClient,
+    audio_to_mulaw,
+)
 from .const import (
     CONF_DEVICE_SERIAL,
     CONF_LOCAL_HOST,
@@ -61,7 +73,7 @@ _ANNOUNCE_SCHEMA = vol.Schema(
         **_TARGET,
         vol.Optional("message"): cv.string,
         vol.Optional("media_url"): cv.string,
-        vol.Optional("language", default="en"): cv.string,
+        vol.Optional("language"): cv.string,
         vol.Optional("answer_first", default=True): cv.boolean,
     }
 )
@@ -125,7 +137,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def _announce(call: ServiceCall) -> None:
         message = call.data.get("message")
         media_url = call.data.get("media_url")
-        language = call.data.get("language", "en")
+        language = call.data.get("language")
         answer_first = call.data.get("answer_first", True)
 
         if not message and not media_url:
@@ -140,19 +152,29 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 "Niko Access Control → Configure to add the local IP and credentials."
             )
 
+        # Prepare the audio before answering, so a failure doesn't leave the
+        # visitor on an answered, silent call.
+        if media_url:
+            try:
+                async with session.get(
+                    media_url, timeout=aiohttp.ClientTimeout(total=30)
+                ) as resp:
+                    resp.raise_for_status()
+                    audio_bytes = await resp.read()
+                    mime_type = resp.content_type or "audio/mpeg"
+            except (aiohttp.ClientError, TimeoutError) as err:
+                raise HomeAssistantError(f"Could not download {media_url}: {err}") from err
+        else:
+            audio_bytes, mime_type = await _tts_audio(hass, message, language)
+        try:
+            pcm_bytes = await audio_to_mulaw(audio_bytes, mime_type)
+        except (RuntimeError, OSError) as err:
+            raise HomeAssistantError(f"Audio conversion failed: {err}") from err
+
         if answer_first:
             await coordinator.async_api_call(lambda: coordinator.api.answer_call(serial))
             await asyncio.sleep(1)
 
-        if media_url:
-            async with session.get(media_url, timeout=None) as resp:
-                resp.raise_for_status()
-                audio_bytes = await resp.read()
-                mime_type = resp.content_type or "audio/mpeg"
-        else:
-            audio_bytes, mime_type = await _tts_audio(hass, message, language)
-
-        pcm_bytes = await audio_to_mulaw(audio_bytes, mime_type)
         if not await local_client.speak(pcm_bytes):
             raise HomeAssistantError("Failed to stream audio to doorbell via ISAPI")
 
@@ -172,13 +194,19 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     api = HikConnectAPI(session)
-    await api.login(entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD])
+    try:
+        await api.login(entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD])
+    except HikConnectAuthError as err:
+        raise ConfigEntryAuthFailed(str(err)) from err
+    except HikConnectError as err:
+        raise ConfigEntryNotReady(f"Cannot reach the Hik-Connect cloud: {err}") from err
 
     # Optional local ISAPI client (set via Options flow)
     local_client: LocalISAPIClient | None = None
     opts = entry.options
     if opts.get(CONF_LOCAL_HOST) and opts.get(CONF_LOCAL_USERNAME) and opts.get(CONF_LOCAL_PASSWORD):
         local_client = LocalISAPIClient(
+            get_async_client(hass),
             opts[CONF_LOCAL_HOST],
             opts[CONF_LOCAL_USERNAME],
             opts[CONF_LOCAL_PASSWORD],
@@ -280,36 +308,32 @@ def _sync_device(hass: HomeAssistant, entry: ConfigEntry, coordinator: NikoCoord
     )
 
 
-async def _tts_audio(hass: HomeAssistant, message: str, language: str) -> tuple[bytes, str]:
-    """Generate TTS audio bytes using the HA TTS component."""
-    from homeassistant.components.tts import DOMAIN as TTS_DOMAIN  # noqa: PLC0415
-
-    manager = hass.data.get(TTS_DOMAIN)
-    if manager is None:
+async def _tts_audio(
+    hass: HomeAssistant, message: str, language: str | None
+) -> tuple[bytes, str]:
+    """Render a message with Home Assistant's default TTS engine → (audio bytes, format)."""
+    if "tts" not in hass.config.components:
         raise HomeAssistantError(
-            "TTS is not configured. Add a TTS integration first "
-            "(Settings → Devices & Services → Add Integration → e.g. Google Translate TTS)."
+            "Text-to-speech is not set up. Add a TTS integration first "
+            "(e.g. Google Translate text-to-speech or Piper), or use 'media_url'."
         )
+    # Imported here: tts is an after_dependency, not a hard requirement.
+    from homeassistant.components import tts  # noqa: PLC0415
+    from homeassistant.components.tts.media_source import (  # noqa: PLC0415
+        generate_media_source_id,
+    )
 
-    engine = getattr(manager, "default_engine", None)
-    if not engine:
-        providers = getattr(manager, "providers", {})
-        if not providers:
-            raise HomeAssistantError("No TTS engine available")
-        engine = next(iter(providers))
-
+    media_source_id = generate_media_source_id(hass, message, language=language)
     try:
-        result = await manager.async_get_tts_audio(engine, language, {}, message)
-        audio_bytes, mime_type = result if isinstance(result, tuple) else (bytes(result), "audio/mpeg")
-    except (AttributeError, TypeError) as err:
-        raise HomeAssistantError(
-            f"TTS API incompatible with this HA version: {err}. "
-            "Use 'media_url' parameter instead."
-        ) from err
+        extension, audio_bytes = await tts.async_get_media_source_audio(hass, media_source_id)
+    except HomeAssistantError:
+        raise
+    except Exception as err:  # noqa: BLE001 - engine failures surface as various types
+        raise HomeAssistantError(f"Text-to-speech failed: {err}") from err
 
     if not audio_bytes:
-        raise HomeAssistantError("TTS returned no audio data")
-    return audio_bytes, mime_type
+        raise HomeAssistantError("Text-to-speech returned no audio")
+    return audio_bytes, f"audio/{extension}"
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

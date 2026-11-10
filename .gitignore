@@ -6,3 +6,12 @@ test_snapshot.jpg
 
 # Local Home Assistant dev instance
 .ha-dev/
+
+# Development leftovers (kept locally, not part of the integration)
+test_*.py
+hik_voice/
+apk/
+docker-compose.dev.yml
+/icon.png
+/icon_v2.png
+.git.corrupt-backup/

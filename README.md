@@ -1,10 +1,10 @@
 # Niko Access Control for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/release/claesmathias/niko_access_control-hacs.svg)](https://github.com/claesmathias/niko_access_control-hacs/releases)
 [![License](https://img.shields.io/github/license/claesmathias/niko_access_control-hacs.svg)](LICENSE)
 
-![Niko Access Control](icon.png)
+![Niko Access Control](custom_components/niko_access_control/brand/icon.png)
 
 Integrate your **Niko Access Control** video doorbell into Home Assistant via the HikConnect cloud API (reverse-engineered from the official Niko Access Control Android app v3.0).
 
@@ -84,11 +84,9 @@ Any Niko Access Control doorbell that is registered with a HikConnect / Niko Sma
 ### Via HACS (recommended)
 
 1. Open HACS in Home Assistant
-2. Go to **Integrations**
-3. Click the ⋮ menu → **Custom repositories**
-4. Add `https://github.com/claesmathias/niko_access_control-hacs` with category **Integration**
-5. Search for **Niko Access Control** and install
-6. Restart Home Assistant
+2. Search for **Niko Access Control** and open it
+3. Click **Download**
+4. Restart Home Assistant
 
 ### Manual
 

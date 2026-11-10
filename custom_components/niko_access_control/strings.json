@@ -247,7 +247,7 @@
         },
         "language": {
           "name": "Language",
-          "description": "Language for the spoken message."
+          "description": "Language for the spoken message. Defaults to the language of the default text-to-speech engine."
         },
         "answer_first": {
           "name": "Answer first",

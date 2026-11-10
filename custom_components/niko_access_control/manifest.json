@@ -1,6 +1,9 @@
 {
   "domain": "niko_access_control",
   "name": "Niko Access Control",
+  "after_dependencies": [
+    "tts"
+  ],
   "codeowners": [
     "@claesmathias"
   ],
@@ -16,5 +19,5 @@
   "requirements": [
     "babel>=2.12.0"
   ],
-  "version": "3.1.2"
+  "version": "3.2.0"
 }

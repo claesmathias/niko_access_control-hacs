@@ -11,6 +11,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import (
     BooleanSelector,
     SelectOptionDict,
@@ -40,7 +41,7 @@ from .const import (
     NOTIFY_MODE_OFF,
     NOTIFY_MODE_SELECTED,
 )
-from .notifications import NikoNotifier, destinations, mobile_devices
+from .notifications import destinations, mobile_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -381,7 +382,7 @@ class NikoOptionsFlowHandler(config_entries.OptionsFlow):
 
             if host and username and password:
                 try:
-                    client = LocalISAPIClient(host, username, password)
+                    client = LocalISAPIClient(get_async_client(self.hass), host, username, password)
                     if not await client.test_connection():
                         errors["base"] = "cannot_connect_local"
                 except Exception:  # noqa: BLE001
