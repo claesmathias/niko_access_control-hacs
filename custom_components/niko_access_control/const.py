@@ -11,8 +11,8 @@ REFRESH_SESSION_PATH = "/v3/apigateway/login"
 CALLING_LIST_PATH = "/v3/calling/{device_serial}/list"
 CALLING_DETAIL_PATH = "/v3/calling/{calling_id}"
 
-# Fixed client headers (mimics the Android app)
-CLIENT_TYPE = "378"  # BuildConfig.APP_TYPE for the Niko OEM app
+# Fixed client headers
+CLIENT_TYPE = "378"
 CLIENT_VERSION = "3.0.0"
 APP_CHANNEL = "APPSTORE"
 
@@ -25,7 +25,7 @@ HISTORY_SLOTS = 50  # number of calls fetched from the cloud per poll
 DEVICE_LIST_INTERVAL = 300  # seconds between device info / device list refreshes
 
 # Live call state from /v3/devconfig/v1/call/{serial}/status.
-# Mapping as used by the official app: 1 = idle, 2 = ring, 3 = on call.
+# Mapping: 1 = idle, 2 = ring, 3 = on call.
 CALL_STATE_IDLE = "idle"
 CALL_STATE_RINGING = "ringing"
 CALL_STATE_ON_CALL = "on_call"

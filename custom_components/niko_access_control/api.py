@@ -415,11 +415,11 @@ class HikConnectAPI:
         return {}
 
     # ------------------------------------------------------------------
-    # Account device list (name / model / firmware / online as shown in the app)
+    # Account device list (name / model / firmware / online)
     # ------------------------------------------------------------------
 
     async def get_user_devices(self) -> list[dict[str, Any]]:
-        """GET v3/userdevices/v1/devices/pagelist → deviceInfos[] (same call the official app uses)."""
+        """GET v3/userdevices/v1/devices/pagelist → deviceInfos[]."""
         resp = await self._get(
             "/v3/userdevices/v1/devices/pagelist",
             params={"groupId": -1, "limit": 50, "offset": 0, "filter": ""},

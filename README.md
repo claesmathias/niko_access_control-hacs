@@ -6,7 +6,7 @@
 
 ![Niko Access Control](custom_components/niko_access_control/brand/icon.png)
 
-Integrate your **Niko Access Control** video doorbell into Home Assistant via the HikConnect cloud API (reverse-engineered from the official Niko Access Control Android app v3.0).
+Integrate your **Niko Access Control** video doorbell into Home Assistant via the HikConnect cloud API.
 
 ---
 
@@ -114,10 +114,9 @@ Version 3.0 removes the separate firmware/model/serial/MAC sensors (now on the d
 
 ## Technical notes
 
-- This integration uses the same cloud API as the official **Niko Access Control** app (v3.0).
 - It communicates exclusively with the **HikConnect / GuardingVision cloud API** (`api.guardingvision.com` / `apiieu.hik-connect.com`).
-- All API calls use `clientType: 378` (the Niko OEM app type) and `appId: NIKO`.
-- Passwords are transmitted as lowercase MD5 hashes, as the official app does.
+- All API calls use `clientType: 378` and `appId: NIKO`.
+- Passwords are transmitted as lowercase MD5 hashes.
 - Live streaming is **not** supported — it requires the proprietary HikConnect VSDK native library which cannot run in Python.
 
 ---
