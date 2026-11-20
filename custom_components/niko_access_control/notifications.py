@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 
@@ -104,6 +105,31 @@ def media_panel_path(entry_id: str) -> str:
     return f"/media-browser/browser/{root}/{folder}"
 
 
+def snapshot_entity_id(hass: HomeAssistant, serial: str) -> str | None:
+    """Entity ID of the last-call image (follows renames), e.g. image.niko_doorbell_x_last_call."""
+    return er.async_get(hass).async_get_entity_id(
+        "image", DOMAIN, f"{serial}_latest_call_snapshot"
+    )
+
+
+def tap_actions(hass: HomeAssistant, entry_id: str, serial: str) -> dict[str, str]:
+    """Where tapping the notification goes: the last-call image's more-info dialog.
+
+    Falls back to the call history in the Media panel when the image entity
+    is not registered.
+    """
+    entity_id = snapshot_entity_id(hass, serial)
+    if entity_id is None:
+        tap = media_panel_path(entry_id)
+        return {"url": tap, "clickAction": tap}
+    return {
+        # iOS: the frontend opens the more-info dialog from this query parameter
+        "url": f"/lovelace/0?more-info-entity-id={entity_id}",
+        # Android: the Companion app opens the more-info dialog itself
+        "clickAction": f"entityId:{entity_id}",
+    }
+
+
 class NikoNotifier:
     """Sends a notification for each ring to the configured mobile devices."""
 
@@ -174,11 +200,10 @@ class NikoNotifier:
         except (KeyError, IndexError, ValueError):
             message = DEFAULT_NOTIFY_MESSAGE.format(**values)
 
-        tap = media_panel_path(self.entry.entry_id)
+        serial = self.coordinator.device_serial
         data: dict[str, Any] = {
-            "tag": f"{DOMAIN}_{self.coordinator.device_serial}",
-            "url": tap,          # iOS
-            "clickAction": tap,  # Android
+            "tag": f"{DOMAIN}_{serial}",
+            **tap_actions(self.hass, self.entry.entry_id, serial),
         }
         if options.get(CONF_NOTIFY_TIME_SENSITIVE, True):
             data["push"] = {"interruption-level": "time-sensitive"}  # iOS

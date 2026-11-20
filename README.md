@@ -52,7 +52,7 @@ Enable under **Settings → Devices & services → Niko Access Control → Confi
 - the time of the ring and the snapshot of that call
 - a configurable title and message with `{time}` and `{date}` placeholders, formatted for the language and country in **Settings → System → General** (e.g. *14:32* and *7 nov 2026*). Default: *“Someone rang at {time} on {date}”*
 - optional time-sensitive delivery (breaks through Focus on iPhone, high priority on Android)
-- tapping opens the call history in the Media panel
+- tapping opens the snapshot of the last call (older calls stay in the Media panel)
 
 To try it, choose **Send test notification** in the same Configure menu, or press the **Test notification** button on the device page (shown while notifications are on). It sends the last call right away. No notify group or automation is needed.
 
