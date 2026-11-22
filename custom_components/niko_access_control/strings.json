@@ -218,5 +218,15 @@
         "selected": "Selected mobile devices"
       }
     }
+  },
+  "issues": {
+    "cloud_unreachable": {
+      "title": "{name}: Hik-Connect cloud unreachable",
+      "description": "Home Assistant has not been able to reach the Hik-Connect cloud for doorbell {serial} for {minutes} minutes, so rings are not detected and the entities are unavailable.\n\nLast error: `{error}`\n\nCheck the internet connection of Home Assistant. If the Niko Access Control app does not work either, the Hik-Connect cloud may be down. This issue disappears by itself once the connection is back."
+    },
+    "doorbell_offline": {
+      "title": "{name}: doorbell offline",
+      "description": "Doorbell {serial} has not been reachable through the Hik-Connect cloud for {minutes} minutes. Rings may not be detected.\n\nCheck that the doorbell has power and that its network connection works (the Niko Access Control app shows the same status). This issue disappears by itself once the doorbell is back online."
+    }
   }
 }

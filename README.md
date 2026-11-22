@@ -31,6 +31,8 @@ Integrate your **Niko Access Control** video doorbell into Home Assistant via th
 
 Model, firmware, hardware version, serial number and MAC address are shown on the device page.
 
+When the Hik-Connect cloud can't be reached, or the doorbell is offline, for more than 5 minutes, an issue appears in **Settings → Repairs**. It clears itself once the connection is back.
+
 ### Call history in the Media panel
 
 Snapshots of all calls in the cloud history (the last 50) can be browsed under **Media → Niko Access Control**, grouped by day:

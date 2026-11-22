@@ -153,6 +153,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass, api, serial,
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
+        title=entry.title,
     )
     await coordinator.async_config_entry_first_refresh()
 
@@ -244,6 +245,6 @@ def _sync_device(hass: HomeAssistant, entry: ConfigEntry, coordinator: NikoCoord
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unloaded:
-        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    if unloaded and (coordinator := hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)):
+        coordinator.async_clear_issues()
     return unloaded

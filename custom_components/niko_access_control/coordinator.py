@@ -9,8 +9,9 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, TypeVar
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import CallingInfo, DeviceInfo, HikConnectAPI, HikConnectAuthError, HikConnectError
@@ -19,6 +20,12 @@ from .const import DEFAULT_SCAN_INTERVAL, DEVICE_LIST_INTERVAL, DOMAIN, HISTORY_
 _T = TypeVar("_T")
 
 _PICTURE_CACHE_SIZE = 60  # ~100 kB each; covers the full 50-call history
+
+# A connection problem must last this long before it is raised in Settings →
+# Repairs, so short cloud hiccups don't produce an issue.
+ISSUE_DELAY = 300  # seconds
+ISSUE_CLOUD_UNREACHABLE = "cloud_unreachable_{serial}"
+ISSUE_DOORBELL_OFFLINE = "doorbell_offline_{serial}"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,9 +52,13 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
         device_serial: str,
         username: str = "",
         password: str = "",
+        title: str = "",
     ) -> None:
         self.api = api
         self.device_serial = device_serial
+        self.title = title or f"Niko {device_serial}"
+        self._unreachable_since: float | None = None
+        self._offline_since: float | None = None
         self._username = username
         self._password = password
         self.ring_coordinator: NikoCallStatusCoordinator | None = None
@@ -110,9 +121,58 @@ class NikoCoordinator(DataUpdateCoordinator[CoordinatorData]):
 
     async def _async_update_data(self) -> CoordinatorData:
         try:
-            return await self._fetch_with_reauth()
+            data = await self._fetch_with_reauth()
         except HikConnectError as err:
+            self._unreachable_since = self._track_issue(
+                ISSUE_CLOUD_UNREACHABLE, self._unreachable_since, True, error=str(err)
+            )
             raise UpdateFailed(str(err)) from err
+        self._unreachable_since = self._track_issue(
+            ISSUE_CLOUD_UNREACHABLE, self._unreachable_since, False
+        )
+        if data.online is not None:  # unknown: leave the offline issue as it is
+            self._offline_since = self._track_issue(
+                ISSUE_DOORBELL_OFFLINE, self._offline_since, not data.online
+            )
+        return data
+
+    def _track_issue(
+        self, issue: str, since: float | None, failing: bool, **placeholders: str
+    ) -> float | None:
+        """Raise a Repairs issue once a problem has lasted ISSUE_DELAY; clear it on recovery.
+
+        Returns the new "failing since" timestamp.
+        """
+        issue_id = issue.format(serial=self.device_serial)
+        if not failing:
+            if since is not None:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return None
+        now = time.monotonic()
+        if since is None:
+            since = now
+        if now - since >= ISSUE_DELAY:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=issue.removesuffix("_{serial}"),
+                translation_placeholders={
+                    "name": self.title,
+                    "serial": self.device_serial,
+                    "minutes": str(int((now - since) // 60)),
+                    **placeholders,
+                },
+            )
+        return since
+
+    @callback
+    def async_clear_issues(self) -> None:
+        """Remove this doorbell's Repairs issues (entry unloaded or removed)."""
+        for issue in (ISSUE_CLOUD_UNREACHABLE, ISSUE_DOORBELL_OFFLINE):
+            ir.async_delete_issue(self.hass, DOMAIN, issue.format(serial=self.device_serial))
 
     async def _fetch_with_reauth(self) -> CoordinatorData:
         try:
